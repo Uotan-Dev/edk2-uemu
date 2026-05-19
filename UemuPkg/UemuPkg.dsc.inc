@@ -79,7 +79,7 @@
   PlatformBootManagerLib|UemuPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
   ResetSystemLib|OvmfPkg/RiscVVirt/Library/ResetSystemLib/BaseResetSystemLib.inf
 
-  RealTimeClockLib|EmbeddedPkg/Library/VirtualRealTimeClockLib/VirtualRealTimeClockLib.inf
+  RealTimeClockLib|UemuPkg/Library/GoldfishRealTimeClockLib/GoldfishRealTimeClockLib.inf
   TimeBaseLib|EmbeddedPkg/Library/TimeBaseLib/TimeBaseLib.inf
   SerialPortLib|MdeModulePkg/Library/BaseSerialPortLib16550/BaseSerialPortLib16550.inf
 
