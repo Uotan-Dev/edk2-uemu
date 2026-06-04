@@ -1,0 +1,40 @@
+## @file
+#  Goldfish Events keyboard driver.
+#
+#  Copyright (c) 2026 Nuo Shen, Nanjing University
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION                    = 0x00010019
+  BASE_NAME                      = GoldfishEventsDxe
+  FILE_GUID                      = 4E6B0DA1-8C9A-4F3E-A7D2-E5B1F9C6D8A3
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = GoldfishEventsDxeInitialize
+
+[Sources.common]
+  GoldfishEventsDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DxeServicesTableLib
+  IoLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gEfiSimpleTextInProtocolGuid
+  gFdtClientProtocolGuid
+
+[Depex]
+  gEfiCpuArchProtocolGuid

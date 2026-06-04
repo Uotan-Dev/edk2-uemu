@@ -120,6 +120,34 @@ STATIC PLATFORM_USB_KEYBOARD  mUsbKeyboard = {
   }
 };
 
+#pragma pack (1)
+typedef struct {
+  VENDOR_DEVICE_PATH          Vendor;
+  EFI_DEVICE_PATH_PROTOCOL    End;
+} PLATFORM_GOLDFISH_KEYBOARD;
+#pragma pack ()
+
+STATIC PLATFORM_GOLDFISH_KEYBOARD  mGoldfishKeyboard = {
+  //
+  // VENDOR_DEVICE_PATH with Goldfish Events Keyboard GUID
+  //
+  {
+    {
+      HARDWARE_DEVICE_PATH, HW_VENDOR_DP,
+      DP_NODE_LEN (VENDOR_DEVICE_PATH)
+    },
+    { 0x4E6B0DA1, 0x8C9A, 0x4F3E, { 0xA7, 0xD2, 0xE5, 0xB1, 0xF9, 0xC6, 0xD8, 0xA3 } }
+  },
+
+  //
+  // EFI_DEVICE_PATH_PROTOCOL End
+  //
+  {
+    END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE,
+    DP_NODE_LEN (EFI_DEVICE_PATH_PROTOCOL)
+  }
+};
+
 /**
   Check if the handle satisfies a particular condition.
 
@@ -829,6 +857,15 @@ PlatformBootManagerBeforeConsole (
   EfiBootManagerUpdateConsoleVariable (
     ConIn,
     (EFI_DEVICE_PATH_PROTOCOL *)&mUsbKeyboard,
+    NULL
+    );
+
+  //
+  // Add the Goldfish Events keyboard device path to ConIn.
+  //
+  EfiBootManagerUpdateConsoleVariable (
+    ConIn,
+    (EFI_DEVICE_PATH_PROTOCOL *)&mGoldfishKeyboard,
     NULL
     );
 
