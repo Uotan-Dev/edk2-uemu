@@ -1,0 +1,25 @@
+## @file
+#  Uemu Package Declaration
+#
+#  Copyright (c) 2026 Nuo Shen, Nanjing University
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = UemuPkg
+  PACKAGE_GUID                   = 710560bb-fdfe-421f-94a7-2af48ba8fb10
+  PACKAGE_VERSION                = 0.1
+
+[Includes]
+  Include
+
+[Guids]
+  gUemuTokenSpaceGuid = { 0x45ab8789, 0xe85f, 0x40b6, { 0x8c, 0xfe, 0x52, 0x3a, 0x54, 0x26, 0x5d, 0x8f }}
+
+[PcdsFixedAtBuild]
+  gUemuTokenSpaceGuid.PcdFrameBufferBaseAddress|0x50000000|UINT64|0x00000001
+  gUemuTokenSpaceGuid.PcdFrameBufferWidth|1024|UINT32|0x00000002
+  gUemuTokenSpaceGuid.PcdFrameBufferHeight|768|UINT32|0x00000003

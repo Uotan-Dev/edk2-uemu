@@ -1,0 +1,15 @@
+Build/
+.DS_Store
+*_extdep/
+*.pyc
+__pycache__/
+tags/
+.vscode/
+.venv/
+.cache/
+/build
+/RISCV_VIRT_CODE.fd
+/RISCV_VIRT_VARS.fd
+/RISCV_VIRT_CODE_DEBUG.fd
+/RISCV_VIRT_VARS_DEBUG.fd
+/compile_commands.json
