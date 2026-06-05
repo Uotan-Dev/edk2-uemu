@@ -212,7 +212,7 @@
       ExtractGuidedSectionLib|EmbeddedPkg/Library/PrePiExtractGuidedSectionLib/PrePiExtractGuidedSectionLib.inf
       NULL|MdeModulePkg/Library/LzmaCustomDecompressLib/LzmaCustomDecompressLib.inf
       HobLib|EmbeddedPkg/Library/PrePiHobLib/PrePiHobLib.inf
-      PrePiHobListPointerLib|UemuPkg/Library/PrePiHobListPointerLib/PrePiHobListPointerLib.inf
+      PrePiHobListPointerLib|OvmfPkg/RiscVVirt/Library/PrePiHobListPointerLib/PrePiHobListPointerLib.inf
       MemoryAllocationLib|EmbeddedPkg/Library/PrePiMemoryAllocationLib/PrePiMemoryAllocationLib.inf
   }
 !endif
