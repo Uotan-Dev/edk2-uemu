@@ -140,6 +140,7 @@ INF  MdeModulePkg/Application/UiApp/UiApp.inf
 # SMBIOS Support
 #
 INF  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
+INF  EmulatorPkg/PlatformSmbiosDxe/PlatformSmbiosDxe.inf
 
 #
 # Video support
