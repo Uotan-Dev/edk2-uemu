@@ -287,6 +287,7 @@
   OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
   OvmfPkg/VirtioNetDxe/VirtioNet.inf
   OvmfPkg/VirtioRngDxe/VirtioRng.inf
+  UemuPkg/Drivers/Bcm2835RngDxe/Bcm2835RngDxe.inf
 
   #
   # FAT filesystem + GPT/MBR partitioning + UDF filesystem + virtio-fs

@@ -127,6 +127,7 @@ INF  OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
 INF  OvmfPkg/VirtioNetDxe/VirtioNet.inf
 INF  OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
 INF  OvmfPkg/VirtioRngDxe/VirtioRng.inf
+INF  UemuPkg/Drivers/Bcm2835RngDxe/Bcm2835RngDxe.inf
 
 !include OvmfPkg/Include/Fdf/ShellDxe.fdf.inc
 
