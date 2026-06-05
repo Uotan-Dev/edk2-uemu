@@ -1,10 +1,16 @@
 /** @file
   Goldfish Events Keyboard Driver
 
-  Produces EFI_SIMPLE_TEXT_INPUT_PROTOCOL for the Goldfish Events virtual
+  Produces EFI_SIMPLE_TEXT_INPUT_PROTOCOL and
+  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL for the Goldfish Events virtual
   keyboard device. Discovers the device from FDT (compatible
   "google,goldfish-events-keypad") or falls back to the hardcoded default
   MMIO base 0x10002000.
+
+  The SimpleTextInputEx protocol is required for BDS hotkey support
+  (e.g. "press ESC within X seconds" to enter the boot manager menu).
+  ConSplitterDxe propagates RegisterKeyNotify only to devices that
+  implement SimpleTextInputEx.
 
   Copyright (c) 2026 Nuo Shen, Nanjing University
 
@@ -24,6 +30,7 @@
 #include <Protocol/DevicePath.h>
 #include <Protocol/FdtClient.h>
 #include <Protocol/SimpleTextIn.h>
+#include <Protocol/SimpleTextInEx.h>
 
 // ---------------------------------------------------------------------------
 // Goldfish Events Register Protocol
@@ -170,8 +177,8 @@ STATIC CONST UINT16  mKeyMapShift[] = {
 // Device Path
 // ---------------------------------------------------------------------------
 typedef struct {
-  VENDOR_DEVICE_PATH    Vendor;
-  EFI_DEVICE_PATH_PROTOCOL End;
+  VENDOR_DEVICE_PATH         Vendor;
+  EFI_DEVICE_PATH_PROTOCOL   End;
 } GOLDFISH_EVENTS_DEVICE_PATH;
 
 // Goldfish Events Keyboard Device Path GUID:
@@ -194,23 +201,46 @@ STATIC GOLDFISH_EVENTS_DEVICE_PATH  mDevicePath = {
 };
 
 // ---------------------------------------------------------------------------
+// Notify Entry (for SimpleTextInputEx.RegisterKeyNotify)
+// ---------------------------------------------------------------------------
+typedef struct _GOLDFISH_EVENTS_NOTIFY  GOLDFISH_EVENTS_NOTIFY;
+
+struct _GOLDFISH_EVENTS_NOTIFY {
+  UINTN                          Signature;
+  EFI_KEY_DATA                  KeyData;
+  EFI_KEY_NOTIFY_FUNCTION       KeyNotificationFn;
+  LIST_ENTRY                    NotifyEntry;
+};
+
+#define GOLDFISH_EVENTS_NOTIFY_SIGNATURE  SIGNATURE_32 ('G', 'f', 'N', 't')
+
+// ---------------------------------------------------------------------------
 // Private Data
 // ---------------------------------------------------------------------------
 typedef struct {
-  UINTN                             Signature;
-  EFI_HANDLE                        Handle;
-  EFI_SIMPLE_TEXT_INPUT_PROTOCOL    SimpleTextIn;
-  EFI_EVENT                         TimerEvent;
-  EFI_PHYSICAL_ADDRESS              MmioBase;
-  BOOLEAN                           KeyShift;   // Shift pressed
-  BOOLEAN                           KeyCtrl;    // Ctrl pressed
-  EFI_INPUT_KEY                     Key;        // Buffered key
-  BOOLEAN                           KeyReady;   // TRUE if Key is valid
+  UINTN                              Signature;
+  EFI_HANDLE                         Handle;
+  EFI_SIMPLE_TEXT_INPUT_PROTOCOL     SimpleTextIn;
+  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  SimpleTextInEx;
+  EFI_EVENT                          TimerEvent;
+  EFI_EVENT                          KeyNotifyProcessEvent;
+  EFI_PHYSICAL_ADDRESS               MmioBase;
+  BOOLEAN                            KeyShift;         // Shift pressed
+  BOOLEAN                            KeyCtrl;          // Ctrl pressed
+  BOOLEAN                            KeyAlt;           // Alt pressed
+  EFI_INPUT_KEY                      Key;              // Buffered key
+  BOOLEAN                            KeyReady;         // TRUE if Key is valid
+  // Key notify queue (depth 1; enough for poll-based Goldfish device)
+  BOOLEAN                            NotifyKeyReady;
+  EFI_KEY_DATA                       NotifyKeyData;
+  LIST_ENTRY                         NotifyList;
 } GOLDFISH_EVENTS_DEV;
 
 #define GOLDFISH_EVENTS_SIGNATURE  SIGNATURE_32 ('G', 'f', 'K', 'b')
 #define GOLDFISH_EVENTS_FROM_THIS(a) \
   CR (a, GOLDFISH_EVENTS_DEV, SimpleTextIn, GOLDFISH_EVENTS_SIGNATURE)
+#define GOLDFISH_EVENTS_FROM_THIS_EX(a) \
+  CR (a, GOLDFISH_EVENTS_DEV, SimpleTextInEx, GOLDFISH_EVENTS_SIGNATURE)
 
 // ---------------------------------------------------------------------------
 // Low-level MMIO Helpers
@@ -234,6 +264,77 @@ GoldfishWrite32 (
   )
 {
   MmioWrite32 (Dev->MmioBase + Offset, Value);
+}
+
+// ---------------------------------------------------------------------------
+// Build EFI_KEY_STATE from current modifier flags
+// ---------------------------------------------------------------------------
+STATIC
+EFI_KEY_STATE
+BuildKeyState (
+  IN GOLDFISH_EVENTS_DEV  *Dev
+  )
+{
+  EFI_KEY_STATE  KeyState;
+
+  KeyState.KeyShiftState  = EFI_SHIFT_STATE_VALID;
+  KeyState.KeyToggleState = EFI_TOGGLE_STATE_VALID;
+
+  if (Dev->KeyShift) {
+    KeyState.KeyShiftState |= (EFI_LEFT_SHIFT_PRESSED | EFI_RIGHT_SHIFT_PRESSED);
+  }
+
+  if (Dev->KeyCtrl) {
+    KeyState.KeyShiftState |= (EFI_LEFT_CONTROL_PRESSED | EFI_RIGHT_CONTROL_PRESSED);
+  }
+
+  if (Dev->KeyAlt) {
+    KeyState.KeyShiftState |= (EFI_LEFT_ALT_PRESSED | EFI_RIGHT_ALT_PRESSED);
+  }
+
+  return KeyState;
+}
+
+// ---------------------------------------------------------------------------
+// Check if an input key matches a registered notification key
+// ---------------------------------------------------------------------------
+STATIC
+BOOLEAN
+IsKeyRegistered (
+  IN EFI_KEY_DATA  *RegisteredData,
+  IN EFI_KEY_DATA  *InputData
+  )
+{
+  ASSERT (RegisteredData != NULL);
+  ASSERT (InputData != NULL);
+
+  if ((RegisteredData->Key.ScanCode    != InputData->Key.ScanCode) ||
+      (RegisteredData->Key.UnicodeChar != InputData->Key.UnicodeChar))
+  {
+    return FALSE;
+  }
+
+  //
+  // If the registered data specifies non-zero KeyShiftState, require a match
+  //
+  if ((RegisteredData->KeyState.KeyShiftState != 0) &&
+      (RegisteredData->KeyState.KeyShiftState !=
+       InputData->KeyState.KeyShiftState))
+  {
+    return FALSE;
+  }
+
+  //
+  // If the registered data specifies non-zero KeyToggleState, require a match
+  //
+  if ((RegisteredData->KeyState.KeyToggleState != 0) &&
+      (RegisteredData->KeyState.KeyToggleState !=
+       InputData->KeyState.KeyToggleState))
+  {
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +362,10 @@ ConvertKeyCode (
       Dev->KeyCtrl = FALSE;
     }
 
+    if (Code == KEY_LEFTALT || Code == KEY_RIGHTALT) {
+      Dev->KeyAlt = FALSE;
+    }
+
     return;
   }
 
@@ -275,9 +380,12 @@ ConvertKeyCode (
     return;
   }
 
-  if (Code == KEY_LEFTALT || Code == KEY_RIGHTALT ||
-      Code == KEY_CAPSLOCK || Code == KEY_NUMLOCK || Code == KEY_SCROLLLOCK)
-  {
+  if (Code == KEY_LEFTALT || Code == KEY_RIGHTALT) {
+    Dev->KeyAlt = TRUE;
+    return;
+  }
+
+  if (Code == KEY_CAPSLOCK || Code == KEY_NUMLOCK || Code == KEY_SCROLLLOCK) {
     return;
   }
 
@@ -367,7 +475,60 @@ ConvertKeyCode (
 }
 
 // ---------------------------------------------------------------------------
-// Poll the Goldfish Events device for new key events
+// Notify callback dispatcher — runs at TPL_CALLBACK per UEFI spec
+// ---------------------------------------------------------------------------
+STATIC
+VOID
+EFIAPI
+KeyNotifyProcessHandler (
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
+  )
+{
+  GOLDFISH_EVENTS_DEV    *Dev = Context;
+  LIST_ENTRY              *Link;
+  GOLDFISH_EVENTS_NOTIFY  *NotifyEntry;
+  EFI_KEY_DATA             KeyData;
+  BOOLEAN                  GotKey;
+  EFI_TPL                  OldTpl;
+
+  //
+  // Dequeue from notify queue under TPL_NOTIFY
+  //
+  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+  GotKey = Dev->NotifyKeyReady;
+  if (GotKey) {
+    CopyMem (&KeyData, &Dev->NotifyKeyData, sizeof (KeyData));
+    Dev->NotifyKeyReady = FALSE;
+  }
+
+  gBS->RestoreTPL (OldTpl);
+
+  if (!GotKey) {
+    return;
+  }
+
+  //
+  // Walk the notify list and invoke matching callbacks
+  //
+  for (Link = GetFirstNode (&Dev->NotifyList);
+       !IsNull (&Dev->NotifyList, Link);
+       Link = GetNextNode (&Dev->NotifyList, Link))
+  {
+    NotifyEntry = CR (
+                    Link,
+                    GOLDFISH_EVENTS_NOTIFY,
+                    NotifyEntry,
+                    GOLDFISH_EVENTS_NOTIFY_SIGNATURE
+                    );
+    if (IsKeyRegistered (&NotifyEntry->KeyData, &KeyData)) {
+      NotifyEntry->KeyNotificationFn (&KeyData);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Poll the Goldfish Events device for new key events and dispatch notifies
 // ---------------------------------------------------------------------------
 STATIC
 VOID
@@ -376,7 +537,9 @@ PollKeyboard (
   )
 {
   UINT32        Type, Code, Value;
-  EFI_INPUT_KEY Key;
+  EFI_INPUT_KEY LocalKey;
+  EFI_KEY_DATA  NotifyKeyData;
+  BOOLEAN       HaveNotify;
 
   for ( ; ; ) {
     Type = GoldfishRead32 (Dev, REG_READ);
@@ -392,17 +555,36 @@ PollKeyboard (
       continue;
     }
 
-    ConvertKeyCode (Dev, (UINT16)Code, (Value == 1), &Key);
+    ConvertKeyCode (Dev, (UINT16)Code, (Value == 1), &LocalKey);
 
     // Discard key releases and modifier-only events (ScanCode == SCAN_NULL
     // and UnicodeChar == CHAR_NULL)
-    if (Key.ScanCode == SCAN_NULL && Key.UnicodeChar == CHAR_NULL) {
+    if (LocalKey.ScanCode == SCAN_NULL && LocalKey.UnicodeChar == CHAR_NULL) {
       continue;
     }
 
-    // Buffer only the latest key for ReadKeyStroke
-    Dev->Key      = Key;
+    // Buffer only the latest key for ReadKeyStroke / ReadKeyStrokeEx
+    Dev->Key      = LocalKey;
     Dev->KeyReady = TRUE;
+
+    // Also enqueue for key notify dispatch.  Build EFI_KEY_DATA with the
+    // current modifier state so that registered hotkeys (ESC, F2, etc.)
+    // with no modifier requirements (KeyShiftState == 0) will match.
+    NotifyKeyData.Key           = LocalKey;
+    NotifyKeyData.KeyState      = BuildKeyState (Dev);
+    Dev->NotifyKeyData          = NotifyKeyData;
+    Dev->NotifyKeyReady         = TRUE;
+    HaveNotify                  = TRUE;
+  }
+
+  if ((HaveNotify != FALSE) && !IsListEmpty (&Dev->NotifyList)) {
+    //
+    // Signal the TPL_CALLBACK event that invokes registered
+    // key-notify callbacks.  We cannot call them directly from
+    // TPL_NOTIFY (timer callback) because the UEFI spec requires
+    // KeyNotificationFunction be invoked at <= TPL_CALLBACK.
+    //
+    gBS->SignalEvent (Dev->KeyNotifyProcessEvent);
   }
 }
 
@@ -423,6 +605,7 @@ KeyboardTimerHandler (
 
   if (Dev->KeyReady) {
     gBS->SignalEvent (Dev->SimpleTextIn.WaitForKey);
+    gBS->SignalEvent (Dev->SimpleTextInEx.WaitForKeyEx);
   }
 }
 
@@ -439,10 +622,13 @@ GoldfishEventsReset (
 {
   GOLDFISH_EVENTS_DEV  *Dev = GOLDFISH_EVENTS_FROM_THIS (This);
 
-  Dev->KeyReady = FALSE;
-  Dev->KeyShift = FALSE;
-  Dev->KeyCtrl  = FALSE;
+  Dev->KeyReady      = FALSE;
+  Dev->KeyShift      = FALSE;
+  Dev->KeyCtrl       = FALSE;
+  Dev->KeyAlt        = FALSE;
+  Dev->NotifyKeyReady = FALSE;
   ZeroMem (&Dev->Key, sizeof (Dev->Key));
+  ZeroMem (&Dev->NotifyKeyData, sizeof (Dev->NotifyKeyData));
 
   // Drain any pending events
   while (GoldfishRead32 (Dev, REG_READ) != 0) {
@@ -508,6 +694,218 @@ GoldfishEventsWaitForKey (
   if (Dev->KeyReady) {
     gBS->SignalEvent (Event);
   }
+}
+
+// ---------------------------------------------------------------------------
+// EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.Reset
+// ---------------------------------------------------------------------------
+STATIC
+EFI_STATUS
+EFIAPI
+GoldfishEventsResetEx (
+  IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This,
+  IN BOOLEAN                            ExtendedVerification
+  )
+{
+  GOLDFISH_EVENTS_DEV  *Dev = GOLDFISH_EVENTS_FROM_THIS_EX (This);
+
+  return GoldfishEventsReset (&Dev->SimpleTextIn, ExtendedVerification);
+}
+
+// ---------------------------------------------------------------------------
+// EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.ReadKeyStrokeEx
+// ---------------------------------------------------------------------------
+STATIC
+EFI_STATUS
+EFIAPI
+GoldfishEventsReadKeyStrokeEx (
+  IN  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This,
+  OUT EFI_KEY_DATA                       *KeyData
+  )
+{
+  GOLDFISH_EVENTS_DEV  *Dev;
+  EFI_STATUS            Status;
+  EFI_TPL               OldTpl;
+  EFI_INPUT_KEY         Key;
+
+  if (KeyData == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Dev = GOLDFISH_EVENTS_FROM_THIS_EX (This);
+
+  Status = GoldfishEventsReadKeyStroke (&Dev->SimpleTextIn, &Key);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+  KeyData->Key       = Key;
+  KeyData->KeyState  = BuildKeyState (Dev);
+  gBS->RestoreTPL (OldTpl);
+
+  return EFI_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.SetState
+// ---------------------------------------------------------------------------
+STATIC
+EFI_STATUS
+EFIAPI
+GoldfishEventsSetState (
+  IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This,
+  IN EFI_KEY_TOGGLE_STATE               *KeyToggleState
+  )
+{
+  if (KeyToggleState == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  //
+  // Goldfish virtual keyboard has no physical LEDs to update.
+  // Accept the state change and return success.
+  //
+  return EFI_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.RegisterKeyNotify
+// ---------------------------------------------------------------------------
+STATIC
+EFI_STATUS
+EFIAPI
+GoldfishEventsRegisterKeyNotify (
+  IN  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This,
+  IN  EFI_KEY_DATA                       *KeyData,
+  IN  EFI_KEY_NOTIFY_FUNCTION            KeyNotificationFunction,
+  OUT VOID                               **NotifyHandle
+  )
+{
+  GOLDFISH_EVENTS_DEV    *Dev;
+  GOLDFISH_EVENTS_NOTIFY  *NewNotify;
+  GOLDFISH_EVENTS_NOTIFY  *ExistingNotify;
+  LIST_ENTRY              *Link;
+  EFI_TPL                  OldTpl;
+
+  if ((KeyData == NULL) || (NotifyHandle == NULL) ||
+      (KeyNotificationFunction == NULL))
+  {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Dev = GOLDFISH_EVENTS_FROM_THIS_EX (This);
+
+  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+
+  //
+  // Check for duplicate registration
+  //
+  for (Link = GetFirstNode (&Dev->NotifyList);
+       !IsNull (&Dev->NotifyList, Link);
+       Link = GetNextNode (&Dev->NotifyList, Link))
+  {
+    ExistingNotify = CR (
+                       Link,
+                       GOLDFISH_EVENTS_NOTIFY,
+                       NotifyEntry,
+                       GOLDFISH_EVENTS_NOTIFY_SIGNATURE
+                       );
+    if ((ExistingNotify->KeyNotificationFn == KeyNotificationFunction) &&
+        (CompareMem (
+           &ExistingNotify->KeyData,
+           KeyData,
+           sizeof (EFI_KEY_DATA)
+           ) == 0))
+    {
+      *NotifyHandle = ExistingNotify;
+      gBS->RestoreTPL (OldTpl);
+      return EFI_SUCCESS;
+    }
+  }
+
+  //
+  // Allocate and insert new notify entry
+  //
+  NewNotify = AllocateZeroPool (sizeof (*NewNotify));
+  if (NewNotify == NULL) {
+    gBS->RestoreTPL (OldTpl);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  NewNotify->Signature          = GOLDFISH_EVENTS_NOTIFY_SIGNATURE;
+  CopyMem (&NewNotify->KeyData, KeyData, sizeof (EFI_KEY_DATA));
+  NewNotify->KeyNotificationFn  = KeyNotificationFunction;
+  InsertTailList (&Dev->NotifyList, &NewNotify->NotifyEntry);
+
+  *NotifyHandle = NewNotify;
+
+  gBS->RestoreTPL (OldTpl);
+  return EFI_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.UnregisterKeyNotify
+// ---------------------------------------------------------------------------
+STATIC
+EFI_STATUS
+EFIAPI
+GoldfishEventsUnregisterKeyNotify (
+  IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This,
+  IN VOID                               *NotificationHandle
+  )
+{
+  GOLDFISH_EVENTS_DEV    *Dev;
+  GOLDFISH_EVENTS_NOTIFY  *NotifyEntry;
+  LIST_ENTRY              *Link;
+  EFI_TPL                  OldTpl;
+
+  if (NotificationHandle == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Dev = GOLDFISH_EVENTS_FROM_THIS_EX (This);
+
+  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+
+  for (Link = GetFirstNode (&Dev->NotifyList);
+       !IsNull (&Dev->NotifyList, Link);
+       Link = GetNextNode (&Dev->NotifyList, Link))
+  {
+    NotifyEntry = CR (
+                    Link,
+                    GOLDFISH_EVENTS_NOTIFY,
+                    NotifyEntry,
+                    GOLDFISH_EVENTS_NOTIFY_SIGNATURE
+                    );
+    if (NotifyEntry == NotificationHandle) {
+      RemoveEntryList (&NotifyEntry->NotifyEntry);
+      FreePool (NotifyEntry);
+      gBS->RestoreTPL (OldTpl);
+      return EFI_SUCCESS;
+    }
+  }
+
+  gBS->RestoreTPL (OldTpl);
+  return EFI_INVALID_PARAMETER;
+}
+
+// ---------------------------------------------------------------------------
+// EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.WaitForKeyEx (event notify function)
+// ---------------------------------------------------------------------------
+STATIC
+VOID
+EFIAPI
+GoldfishEventsWaitForKeyEx (
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
+  )
+{
+  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This = Context;
+  GOLDFISH_EVENTS_DEV                *Dev  = GOLDFISH_EVENTS_FROM_THIS_EX (This);
+
+  // Delegate to the same poll-and-signal logic used by WaitForKey
+  GoldfishEventsWaitForKey (Event, &Dev->SimpleTextIn);
 }
 
 // ---------------------------------------------------------------------------
@@ -628,6 +1026,7 @@ GoldfishEventsDxeInitialize (
 
   Dev->Signature = GOLDFISH_EVENTS_SIGNATURE;
   Dev->MmioBase  = MmioBase;
+  InitializeListHead (&Dev->NotifyList);
 
   // Bring the device into LIVE state: write PAGE_ABSDATA to REG_SET_PAGE,
   // then read REG_LEN (this transitions STATE_INIT -> STATE_BUFFERED ->
@@ -651,6 +1050,41 @@ GoldfishEventsDxeInitialize (
     goto FreeDev;
   }
 
+  // Set up the SimpleTextInEx protocol
+  Dev->SimpleTextInEx.Reset              = GoldfishEventsResetEx;
+  Dev->SimpleTextInEx.ReadKeyStrokeEx    = GoldfishEventsReadKeyStrokeEx;
+  Dev->SimpleTextInEx.SetState           = GoldfishEventsSetState;
+  Dev->SimpleTextInEx.RegisterKeyNotify  = GoldfishEventsRegisterKeyNotify;
+  Dev->SimpleTextInEx.UnregisterKeyNotify = GoldfishEventsUnregisterKeyNotify;
+
+  // Create WaitForKeyEx event
+  Status = gBS->CreateEvent (
+                  EVT_NOTIFY_WAIT,
+                  TPL_NOTIFY,
+                  GoldfishEventsWaitForKeyEx,
+                  &Dev->SimpleTextInEx,
+                  &Dev->SimpleTextInEx.WaitForKeyEx
+                  );
+  if (EFI_ERROR (Status)) {
+    goto CloseWaitForKey;
+  }
+
+  //
+  // Create TPL_CALLBACK event for dispatching key-notify callbacks.
+  // UEFI spec requires EFI_KEY_NOTIFY_FUNCTION be invoked at <= TPL_CALLBACK,
+  // but PollKeyboard runs inside a TPL_NOTIFY timer callback.
+  //
+  Status = gBS->CreateEvent (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_CALLBACK,
+                  KeyNotifyProcessHandler,
+                  Dev,
+                  &Dev->KeyNotifyProcessEvent
+                  );
+  if (EFI_ERROR (Status)) {
+    goto CloseWaitForKeyEx;
+  }
+
   // Create periodic polling timer
   Status = gBS->CreateEvent (
                   EVT_TIMER | EVT_NOTIFY_SIGNAL,
@@ -660,7 +1094,7 @@ GoldfishEventsDxeInitialize (
                   &Dev->TimerEvent
                   );
   if (EFI_ERROR (Status)) {
-    goto CloseWaitForKey;
+    goto CloseKeyNotifyProcess;
   }
 
   Status = gBS->SetTimer (
@@ -672,13 +1106,15 @@ GoldfishEventsDxeInitialize (
     goto CloseTimer;
   }
 
-  // Install the SimpleTextIn protocol and device path on a new handle
+  // Install both SimpleTextIn and SimpleTextInEx on the same handle
   Status = gBS->InstallMultipleProtocolInterfaces (
                   &Dev->Handle,
                   &gEfiDevicePathProtocolGuid,
                   &mDevicePath,
                   &gEfiSimpleTextInProtocolGuid,
                   &Dev->SimpleTextIn,
+                  &gEfiSimpleTextInputExProtocolGuid,
+                  &Dev->SimpleTextInEx,
                   NULL
                   );
   if (EFI_ERROR (Status)) {
@@ -690,6 +1126,12 @@ GoldfishEventsDxeInitialize (
 
 CloseTimer:
   gBS->CloseEvent (Dev->TimerEvent);
+
+CloseKeyNotifyProcess:
+  gBS->CloseEvent (Dev->KeyNotifyProcessEvent);
+
+CloseWaitForKeyEx:
+  gBS->CloseEvent (Dev->SimpleTextInEx.WaitForKeyEx);
 
 CloseWaitForKey:
   gBS->CloseEvent (Dev->SimpleTextIn.WaitForKey);
