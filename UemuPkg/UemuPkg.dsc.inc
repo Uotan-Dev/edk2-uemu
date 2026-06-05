@@ -63,11 +63,6 @@
   OemHookStatusCodeLib|MdeModulePkg/Library/OemHookStatusCodeLibNull/OemHookStatusCodeLibNull.inf
   PeiServicesLib|MdePkg/Library/PeiServicesLib/PeiServicesLib.inf
 
-  #
-  # Ramdisk Requirements
-  #
-  FileExplorerLib|MdeModulePkg/Library/FileExplorerLib/FileExplorerLib.inf
-
   # Allow dynamic PCDs
   #
 
@@ -89,16 +84,9 @@
   # Flattened Device Tree (FDT) access library
   FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
 
-  # PCI Libraries
+  # PCI Libraries (needed by SerialPortLib even though platform has no PCI)
   PciLib|MdePkg/Library/BasePciLibPciExpress/BasePciLibPciExpress.inf
   PciExpressLib|MdePkg/Library/BasePciExpressLib/BasePciExpressLib.inf
-  PciCapLib|OvmfPkg/Library/BasePciCapLib/BasePciCapLib.inf
-  PciCapPciSegmentLib|OvmfPkg/Library/BasePciCapPciSegmentLib/BasePciCapPciSegmentLib.inf
-  PciCapPciIoLib|OvmfPkg/Library/UefiPciCapPciIoLib/UefiPciCapPciIoLib.inf
-  DxeHardwareInfoLib|OvmfPkg/Library/HardwareInfoLib/DxeHardwareInfoLib.inf
-
-  # USB Libraries
-  UefiUsbLib|MdePkg/Library/UefiUsbLib/UefiUsbLib.inf
 
   #
   # CryptoPkg libraries needed by multiple firmware features
@@ -271,9 +259,4 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeNxMemoryProtectionPolicy|0xC000000000007FD5
 
 [Components.common]
-  #
-  # Ramdisk support
-  #
-  MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
-
 !include OvmfPkg/Include/Dsc/ShellComponents.dsc.inc

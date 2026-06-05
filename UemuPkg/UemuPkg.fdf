@@ -111,8 +111,6 @@ INF  MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
 INF  MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
 INF  FatPkg/EnhancedFatDxe/Fat.inf
 INF  MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
-INF  MdeModulePkg/Universal/Disk/UdfDxe/UdfDxe.inf
-INF  OvmfPkg/VirtioFsDxe/VirtioFsDxe.inf
 
 #
 # Status Code Routing
@@ -125,8 +123,6 @@ INF  MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntim
 #
 INF  OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
 INF  OvmfPkg/VirtioNetDxe/VirtioNet.inf
-INF  OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
-INF  OvmfPkg/VirtioRngDxe/VirtioRng.inf
 INF  UemuPkg/Drivers/Bcm2835RngDxe/Bcm2835RngDxe.inf
 
 !include OvmfPkg/Include/Fdf/ShellDxe.fdf.inc
@@ -141,37 +137,9 @@ INF  MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
 INF  MdeModulePkg/Application/UiApp/UiApp.inf
 
 #
-# SCSI Bus and Disk Driver
-#
-INF  MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
-INF  MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
-
-#
-# SATA
-#
-INF  MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
-INF  MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
-INF  MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
-
-#
-# NVME Driver
-#
-INF  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
-
-#
 # SMBIOS Support
 #
 INF  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
-
-#
-# PCI support
-#
-INF  UefiCpuPkg/CpuMmio2Dxe/CpuMmio2Dxe.inf
-INF  MdeModulePkg/Bus/Pci/PciHostBridgeDxe/PciHostBridgeDxe.inf
-INF  MdeModulePkg/Bus/Pci/PciBusDxe/PciBusDxe.inf
-INF  OvmfPkg/PciHotPlugInitDxe/PciHotPlugInit.inf
-INF  OvmfPkg/VirtioPciDeviceDxe/VirtioPciDeviceDxe.inf
-INF  OvmfPkg/Virtio10Dxe/Virtio10.inf
 
 #
 # Video support
@@ -180,24 +148,9 @@ INF  OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
 INF  UemuPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
 
 #
-# Usb Support
-#
-INF  MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf
-INF  MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
-INF  MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
-INF  MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
-INF  MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
-INF  MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
-
-#
 # TianoCore logo (splash screen)
 #
 INF  MdeModulePkg/Logo/LogoDxe.inf
-
-#
-# Ramdisk support
-#
-INF  MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
 
 ################################################################################
 

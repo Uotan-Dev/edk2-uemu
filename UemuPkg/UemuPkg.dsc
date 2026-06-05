@@ -91,10 +91,6 @@
   CustomizedDisplayLib|MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLib.inf
   FrameBufferBltLib|MdeModulePkg/Library/FrameBufferBltLib/FrameBufferBltLib.inf
   FileExplorerLib|MdeModulePkg/Library/FileExplorerLib/FileExplorerLib.inf
-  PciPcdProducerLib|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
-  PciSegmentLib|MdePkg/Library/BasePciSegmentLibPci/BasePciSegmentLibPci.inf
-  PciHostBridgeLib|OvmfPkg/Fdt/FdtPciHostBridgeLib/FdtPciHostBridgeLib.inf
-  PciHostBridgeUtilityLib|OvmfPkg/Library/PciHostBridgeUtilityLib/PciHostBridgeUtilityLib.inf
   PeiHardwareInfoLib|OvmfPkg/Library/HardwareInfoLib/PeiHardwareInfoLib.inf
   PlatformHookLib|MdeModulePkg/Library/BasePlatformHookLibNull/BasePlatformHookLibNull.inf
   ImagePropertiesRecordLib|MdeModulePkg/Library/ImagePropertiesRecordLib/ImagePropertiesRecordLib.inf
@@ -104,11 +100,8 @@
 
 [LibraryClasses.common.DXE_DRIVER]
   ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
-  PciExpressLib|OvmfPkg/Library/BaseCachingPciExpressLib/BaseCachingPciExpressLib.inf
 
 [LibraryClasses.common.UEFI_DRIVER]
-  UefiScsiLib|MdePkg/Library/UefiScsiLib/UefiScsiLib.inf
-  PciExpressLib|OvmfPkg/Library/BaseCachingPciExpressLib/BaseCachingPciExpressLib.inf
 
 ################################################################################
 #
@@ -284,9 +277,7 @@
   }
   OvmfPkg/Fdt/HighMemDxe/HighMemDxe.inf
   OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
-  OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
   OvmfPkg/VirtioNetDxe/VirtioNet.inf
-  OvmfPkg/VirtioRngDxe/VirtioRng.inf
   UemuPkg/Drivers/Bcm2835RngDxe/Bcm2835RngDxe.inf
 
   #
@@ -296,8 +287,6 @@
   MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
   FatPkg/EnhancedFatDxe/Fat.inf
-  MdeModulePkg/Universal/Disk/UdfDxe/UdfDxe.inf
-  OvmfPkg/VirtioFsDxe/VirtioFsDxe.inf
 
   #
   # Bds
@@ -321,43 +310,9 @@
   }
 
   #
-  # SCSI Bus and Disk Driver
-  #
-  MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
-  MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
-
-  #
-  # SATA
-  #
-  MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
-  MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
-  MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
-
-  #
-  # NVME Driver
-  #
-  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
-
-  #
   # SMBIOS Support
   #
   MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
-
-  #
-  # PCI support
-  #
-  UefiCpuPkg/CpuMmio2Dxe/CpuMmio2Dxe.inf {
-    <LibraryClasses>
-      NULL|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
-  }
-  MdeModulePkg/Bus/Pci/PciHostBridgeDxe/PciHostBridgeDxe.inf
-  MdeModulePkg/Bus/Pci/PciBusDxe/PciBusDxe.inf {
-    <LibraryClasses>
-      NULL|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
-  }
-  OvmfPkg/PciHotPlugInitDxe/PciHotPlugInit.inf
-  OvmfPkg/VirtioPciDeviceDxe/VirtioPciDeviceDxe.inf
-  OvmfPkg/Virtio10Dxe/Virtio10.inf
 
   #
   # Video support
@@ -365,12 +320,3 @@
   OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
   UemuPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
 
-  #
-  # USB Support
-  #
-  MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf
-  MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
-  MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
-  MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
-  MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
-  MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
