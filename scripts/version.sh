@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=0.1
+VERSION=1.0
 cd "$(dirname "$(realpath "$0")")/.."
 if ! [ -d .git ]; then
     echo "$VERSION"

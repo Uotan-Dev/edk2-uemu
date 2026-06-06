@@ -17,7 +17,7 @@
 [Defines]
   PLATFORM_NAME                  = UemuPkg
   PLATFORM_GUID                  = 3d9ed9a5-91dc-449b-836e-26529b9431a2
-  PLATFORM_VERSION               = 0.1
+  PLATFORM_VERSION               = 1.0
   DSC_SPECIFICATION              = 0x0001001c
   OUTPUT_DIRECTORY               = Build/$(PLATFORM_NAME)
   SUPPORTED_ARCHITECTURES        = RISCV64
@@ -119,7 +119,11 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x2000
   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxAuthVariableSize|0x2800
 
-  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVersionString|L"0.1"
+!ifdef $(FIRMWARE_VER)
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVersionString|L"$(FIRMWARE_VER)"
+!else
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVersionString|L"1.0"
+!endif
 
   # Serial Port
   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialUseMmio|TRUE

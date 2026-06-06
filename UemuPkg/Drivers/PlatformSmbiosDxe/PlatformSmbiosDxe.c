@@ -123,7 +123,7 @@ SMBIOS_TABLE_TYPE1 mSysInfoType1 = {
 
 CHAR8 mSysInfoManufName[128]          = "Uotan";
 CHAR8 mSysInfoProductName[128]        = "Uotan RISC-V Emulator";
-CHAR8 mSysInfoVersionName[128]        = "0.1";
+CHAR8 mSysInfoVersionName[128]        = "1.1";
 CHAR8 mSysInfoSerial[sizeof (UINT64) * 2 + 1] = "Not Specified";
 CHAR8 mSysInfoSKU[sizeof (UINT64) * 2 + 1]    = "Not Specified";
 
