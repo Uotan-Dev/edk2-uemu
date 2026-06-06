@@ -316,6 +316,11 @@
   UemuPkg/Drivers/PlatformSmbiosDxe/PlatformSmbiosDxe.inf
 
   #
+  # Battery Support
+  #
+  UemuPkg/Drivers/GoldfishBatteryDxe/GoldfishBatteryDxe.inf
+
+  #
   # Video support
   #
   OvmfPkg/VirtioGpuDxe/VirtioGpu.inf

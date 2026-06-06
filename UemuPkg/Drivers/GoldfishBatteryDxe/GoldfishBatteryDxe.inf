@@ -1,0 +1,46 @@
+## @file
+#  Goldfish Battery driver for the Uotan RISC-V Emulator.
+#
+#  Discovers the Goldfish Battery device from FDT (compatible
+#  "google,goldfish-battery"), reads battery status registers,
+#  installs SMBIOS Type 22 (Portable Battery), and produces a
+#  Goldfish Battery protocol for runtime status queries.
+#
+#  Copyright (c) 2026 Nuo Shen, Nanjing University
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION                    = 0x0001001A
+  BASE_NAME                      = GoldfishBatteryDxe
+  FILE_GUID                      = 8F0E0B1A-3D2C-4F5E-A6B7-C8D9E0F12A3B
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = GoldfishBatteryDxeInitialize
+
+[Sources]
+  GoldfishBatteryDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DxeServicesTableLib
+  IoLib
+  MemoryAllocationLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gFdtClientProtocolGuid          # PROTOCOL ALWAYS_CONSUMED
+  gEfiSmbiosProtocolGuid          # PROTOCOL ALWAYS_CONSUMED
+
+[Depex]
+  gFdtClientProtocolGuid AND gEfiSmbiosProtocolGuid

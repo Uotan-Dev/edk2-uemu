@@ -98,6 +98,7 @@ INF  MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
 INF  MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 INF  MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
 INF  UemuPkg/Drivers/GoldfishEventsDxe/GoldfishEventsDxe.inf
+INF  UemuPkg/Drivers/GoldfishBatteryDxe/GoldfishBatteryDxe.inf
 
 # RISC-V Core Drivers
 INF  UefiCpuPkg/CpuTimerDxeRiscV64/CpuTimerDxeRiscV64.inf
