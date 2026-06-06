@@ -1,0 +1,47 @@
+## @file
+#  Static SMBIOS Table for the Uotan RISC-V Emulator platform
+#
+#  Copyright (c) 2026 Nuo Shen, Nanjing University
+#  Copyright (c) 2012, Apple Inc. All rights reserved.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001A
+  BASE_NAME                      = PlatformSmbiosDxe
+  FILE_GUID                      = 67FA951E-4FA2-9F4E-A658-4DBD954AC22E
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = PlatformSmbiosDriverEntryPoint
+
+[Sources]
+  PlatformSmbiosDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  FdtLib
+  HobLib
+  MemoryAllocationLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiLib
+
+[Guids]
+  gFdtHobGuid
+
+[Protocols]
+  gEfiSmbiosProtocolGuid        # PROTOCOL ALWAYS_CONSUMED
+  gFdtClientProtocolGuid        # PROTOCOL ALWAYS_CONSUMED
+
+[Depex]
+  gEfiSmbiosProtocolGuid AND gFdtClientProtocolGuid

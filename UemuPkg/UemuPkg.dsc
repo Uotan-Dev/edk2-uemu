@@ -97,7 +97,6 @@
 
   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
   TpmPlatformHierarchyLib|SecurityPkg/Library/PeiDxeTpmPlatformHierarchyLibNull/PeiDxeTpmPlatformHierarchyLib.inf
-  SmbiosLib|EmulatorPkg/Library/SmbiosLib/SmbiosLib.inf
 
 [LibraryClasses.common.DXE_DRIVER]
   ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
@@ -314,7 +313,7 @@
   # SMBIOS Support
   #
   MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
-  EmulatorPkg/PlatformSmbiosDxe/PlatformSmbiosDxe.inf
+  UemuPkg/Drivers/PlatformSmbiosDxe/PlatformSmbiosDxe.inf
 
   #
   # Video support
