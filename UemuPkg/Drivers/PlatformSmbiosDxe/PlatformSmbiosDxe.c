@@ -524,6 +524,52 @@ GetTimeBaseFrequency (
   return SwapBytes32 (*(CONST UINT32 *)Prop->Data);
 }
 
+#define BENCH_SORT_SIZE  256
+
+//
+// In-place recursive quicksort with Hoare partition and
+// median-of-three pivot selection.
+//
+STATIC
+VOID
+QuickSortInt32 (
+  INT32  *Array,
+  INTN    Left,
+  INTN    Right
+  )
+{
+  INTN   I, J;
+  INT32  Pivot, Tmp;
+
+  if (Left >= Right) return;
+
+  //
+  // Median-of-three pivot
+  //
+  I = (Left + Right) / 2;
+  if (Array[Left] > Array[I]) { Tmp = Array[Left]; Array[Left] = Array[I]; Array[I] = Tmp; }
+  if (Array[Left] > Array[Right]) { Tmp = Array[Left]; Array[Left] = Array[Right]; Array[Right] = Tmp; }
+  if (Array[I] > Array[Right]) { Tmp = Array[I]; Array[I] = Array[Right]; Array[Right] = Tmp; }
+  Pivot = Array[I];
+
+  //
+  // Hoare partition
+  //
+  I = Left;
+  J = Right;
+
+  while (1) {
+    while (Array[I] < Pivot) I++;
+    while (Array[J] > Pivot) J--;
+    if (I >= J) break;
+    Tmp = Array[I]; Array[I] = Array[J]; Array[J] = Tmp;
+    I++; J--;
+  }
+
+  QuickSortInt32 (Array, Left, J);
+  QuickSortInt32 (Array, J + 1, Right);
+}
+
 /**
   Estimate the CPU frequency in MHz using the RISC-V cycle counter
   (rdcycle) and the time CSR (rdtime).
@@ -543,15 +589,17 @@ EstimateCpuFrequencyMHz (
   VOID
   )
 {
-  UINT64  TimeBaseFreq;
-  UINT64  StartTime;
-  UINT64  EndTime;
-  UINT64  StartCycle;
-  UINT64  EndCycle;
-  UINT64  DeltaTime;
-  UINT64  DeltaCycle;
-  UINT64  WaitTicks;
-  UINT64  FreqMHz;
+  UINT64   TimeBaseFreq;
+  UINT64   StartTime;
+  UINT64   EndTime;
+  UINT64   StartCycle;
+  UINT64   EndCycle;
+  UINT64   DeltaTime;
+  UINT64   DeltaCycle;
+  UINT64   FreqMHz;
+  UINT64   Lcg;
+  UINTN    Idx;
+  INT32    SortArray[BENCH_SORT_SIZE];
 
   TimeBaseFreq = GetTimeBaseFrequency ();
   if (TimeBaseFreq == 0) {
@@ -566,21 +614,36 @@ EstimateCpuFrequencyMHz (
     ));
 
   //
-  // Wait approximately 10 ms by spinning on rdtime.
+  // Fill array with pseudo-random data via LCG
   //
-  WaitTicks = DivU64x32 (TimeBaseFreq, 100);
+  Lcg = 1;
+  for (Idx = 0; Idx < BENCH_SORT_SIZE; Idx++) {
+    Lcg            = Lcg * 1103515245ULL + 12345ULL;
+    SortArray[Idx] = (INT32)(Lcg >> 16);
+  }
 
+  //
+  // Measure: qsort workload, rdtime only at boundaries
+  //
   StartTime  = RiscVReadTimer ();
   asm volatile ("rdcycle %0" : "=r" (StartCycle));
 
-  //
-  // Spin until enough wall-clock time has passed.
-  //
-  do {
-    EndTime = RiscVReadTimer ();
-  } while ((EndTime - StartTime) < WaitTicks);
+  QuickSortInt32 (SortArray, 0, BENCH_SORT_SIZE - 1);
 
   asm volatile ("rdcycle %0" : "=r" (EndCycle));
+  EndTime    = RiscVReadTimer ();
+
+  //
+  // Verify the array is sorted (guards against compiler eliminating
+  // dead stores)
+  //
+  for (Idx = 1; Idx < BENCH_SORT_SIZE; Idx++) {
+    if (SortArray[Idx - 1] > SortArray[Idx]) {
+      DEBUG ((DEBUG_WARN, "%a: sort verification failed at %lu\n",
+        __func__, Idx));
+      return 0;
+    }
+  }
 
   DeltaTime  = EndTime - StartTime;
   DeltaCycle = EndCycle - StartCycle;
@@ -609,8 +672,9 @@ EstimateCpuFrequencyMHz (
     return 0;
   }
 
-  DEBUG ((DEBUG_INFO, "%a: estimated CPU frequency: %lu MHz\n",
-    __func__, FreqMHz));
+  DEBUG ((DEBUG_INFO,
+    "%a: estimated CPU frequency: %lu MHz (qsort %d elements)\n",
+    __func__, FreqMHz, BENCH_SORT_SIZE));
   return (UINT32)FreqMHz;
 }
 
