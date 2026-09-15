@@ -280,6 +280,15 @@
       DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
   }
   OvmfPkg/Fdt/HighMemDxe/HighMemDxe.inf
+
+  #
+  # Platform hardware description policy.  This platform has no ACPI, so the
+  # driver publishes gEdkiiPlatformHasDeviceTreeGuid, which makes
+  # EmbeddedPkg/Drivers/FdtClientDxe install the DTB into the UEFI
+  # configuration table (gFdtTableGuid) for the OS loader.
+  #
+  OvmfPkg/PlatformHasAcpiDtDxe/PlatformHasAcpiDtDxe.inf
+
   OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
   OvmfPkg/VirtioNetDxe/VirtioNet.inf
   UemuPkg/Drivers/Bcm2835RngDxe/Bcm2835RngDxe.inf

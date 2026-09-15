@@ -75,6 +75,11 @@ INF  EmbeddedPkg/Drivers/FdtClientDxe/FdtClientDxe.inf
 INF  OvmfPkg/Fdt/HighMemDxe/HighMemDxe.inf
 
 #
+# Device Tree handoff policy (no ACPI on this platform)
+#
+INF  OvmfPkg/PlatformHasAcpiDtDxe/PlatformHasAcpiDtDxe.inf
+
+#
 # PI DXE Drivers producing Architectural Protocols (EFI Services)
 #
 INF  UefiCpuPkg/CpuDxeRiscV64/CpuDxeRiscV64.inf
