@@ -18,11 +18,13 @@
 
 [Sources]
   PlatformSmbiosDxe.c
+  UemuPkg/Include/Library/UemuFdtLib.h
 
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   UefiDriverEntryPoint

@@ -144,11 +144,6 @@
 
   gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosEntryPointProvideMethod|0x2
 
-  # SimpleFB
-  gUemuTokenSpaceGuid.PcdFrameBufferBaseAddress|0x50000000
-  gUemuTokenSpaceGuid.PcdFrameBufferWidth|1024
-  gUemuTokenSpaceGuid.PcdFrameBufferHeight|768
-
 [PcdsDynamicDefault.common]
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|3
 

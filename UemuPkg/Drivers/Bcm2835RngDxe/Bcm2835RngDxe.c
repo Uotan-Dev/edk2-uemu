@@ -16,13 +16,19 @@
 #include <Library/IoLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
+#include <Library/UemuFdtLib.h>
+
 #include "Bcm2835Rng.h"
 
 #include <Protocol/Rng.h>
 
-#define RNG_MMIO_SIZE            0x1000
 #define RNG_WARMUP_COUNT        0x40000
 #define RNG_MAX_RETRIES         0x100         // arbitrary upper bound
+
+//
+// The device tree locates the RNG; every register access goes through this.
+//
+STATIC UINTN  mRngMmioBase;
 
 /**
   Returns information about the random number generation implementation.
@@ -129,6 +135,7 @@ Bcm2835RngGetRNG (
   UINT32 Val;
   UINT32 Num;
   UINT32 Retries;
+  UINTN  MmioBase;
 
   if (This == NULL || RNGValueLength == 0 || RNGValue == NULL) {
     return EFI_INVALID_PARAMETER;
@@ -142,10 +149,12 @@ Bcm2835RngGetRNG (
     return EFI_UNSUPPORTED;
   }
 
+  MmioBase = mRngMmioBase;
+
   while (RNGValueLength > 0) {
     Retries = RNG_MAX_RETRIES;
     do {
-      Num = MmioRead32 (RNG_STATUS) >> 24;
+      Num = MmioRead32 (MmioBase + RNG_STATUS) >> 24;
       MemoryFence ();
     } while (!Num && Retries-- > 0);
 
@@ -154,14 +163,14 @@ Bcm2835RngGetRNG (
     }
 
     while (RNGValueLength >= sizeof (UINT32) && Num > 0) {
-      WriteUnaligned32 ((VOID *)RNGValue, MmioRead32 (RNG_DATA));
+      WriteUnaligned32 ((VOID *)RNGValue, MmioRead32 (MmioBase + RNG_DATA));
       RNGValue += sizeof (UINT32);
       RNGValueLength -= sizeof (UINT32);
       Num--;
     }
 
     if (RNGValueLength > 0 && Num > 0) {
-      Val = MmioRead32 (RNG_DATA);
+      Val = MmioRead32 (MmioBase + RNG_DATA);
       while (RNGValueLength--) {
         *RNGValue++ = (UINT8)Val;
         Val >>= 8;
@@ -186,13 +195,43 @@ Bcm2835RngEntryPoint (
   IN EFI_SYSTEM_TABLE *SystemTable
   )
 {
-  EFI_STATUS      Status;
+  EFI_STATUS            Status;
+  UINT64                MmioSize;
+  EFI_PHYSICAL_ADDRESS  MmioBase;
+  UINT64                GcdSize;
+  EFI_PHYSICAL_ADDRESS  GcdBase;
+
+  //
+  // Locate the RNG in the device tree the emulator built.  A missing node
+  // means this machine has no RNG, which is not an error to report.
+  //
+  Status = UemuFdtFindNodeBaseAndSize ("brcm,bcm2835-rng", &MmioBase, &MmioSize);
+  if (Status == EFI_NOT_FOUND) {
+    DEBUG ((DEBUG_INFO, "%a: no brcm,bcm2835-rng device\n", __func__));
+    return EFI_NOT_FOUND;
+  }
+
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  mRngMmioBase = (UINTN)MmioBase;
+
+  //
+  // The node's "reg" is only 0x10 bytes; the GCD can only describe whole
+  // pages and the CPU's memory attributes reject unaligned ranges, so
+  // widen a copy of the region for the GCD while the register accesses
+  // above keep using the exact base.
+  //
+  GcdBase = MmioBase;
+  GcdSize = MmioSize;
+  UemuFdtRegionToPageWindow (&GcdBase, &GcdSize);
 
   // Register the MMIO range in GCD as uncacheable MMIO before accessing it
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
-                  RNG_BASE_ADDRESS,
-                  RNG_MMIO_SIZE,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
                   );
   if (EFI_ERROR (Status)) {
@@ -205,8 +244,8 @@ Bcm2835RngEntryPoint (
   }
 
   Status = gDS->SetMemorySpaceAttributes (
-                  RNG_BASE_ADDRESS,
-                  RNG_MMIO_SIZE,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC
                   );
   if (EFI_ERROR (Status)) {
@@ -224,8 +263,8 @@ Bcm2835RngEntryPoint (
                   NULL);
   ASSERT_EFI_ERROR (Status);
 
-  MmioWrite32 (RNG_STATUS, RNG_WARMUP_COUNT);
-  MmioWrite32 (RNG_CTRL, RNG_CTRL_ENABLE);
+  MmioWrite32 (mRngMmioBase + RNG_STATUS, RNG_WARMUP_COUNT);
+  MmioWrite32 (mRngMmioBase + RNG_CTRL, RNG_CTRL_ENABLE);
 
   return EFI_SUCCESS;
 }

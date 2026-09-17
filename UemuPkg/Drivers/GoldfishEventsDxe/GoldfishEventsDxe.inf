@@ -15,17 +15,21 @@
 
 [Sources.common]
   GoldfishEventsDxe.c
+  UemuPkg/Include/Library/UemuFdtLib.h
 
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
   DebugLib
   DxeServicesTableLib
+  FdtLib
+  HobLib
   IoLib
   MemoryAllocationLib
   UefiBootServicesTableLib
@@ -36,6 +40,9 @@
   gEfiSimpleTextInProtocolGuid
   gEfiSimpleTextInputExProtocolGuid
   gFdtClientProtocolGuid
+
+[Guids]
+  gFdtHobGuid
 
 [Depex]
   gEfiCpuArchProtocolGuid

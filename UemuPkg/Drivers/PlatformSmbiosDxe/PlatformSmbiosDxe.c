@@ -28,6 +28,8 @@
 #include <Protocol/FdtClient.h>
 #include <Protocol/Smbios.h>
 
+#include <Library/UemuFdtLib.h>
+
 /***********************************************************************
         SMBIOS data definition  TYPE0  BIOS Information
 ************************************************************************/
@@ -123,7 +125,11 @@ SMBIOS_TABLE_TYPE1 mSysInfoType1 = {
 
 CHAR8 mSysInfoManufName[128]          = "Uotan";
 CHAR8 mSysInfoProductName[128]        = "Uotan RISC-V Emulator";
-CHAR8 mSysInfoVersionName[128]        = "1.1";
+//
+// Overwritten with the emulator version from the device tree; this value
+// only survives if that property cannot be read.
+//
+CHAR8 mSysInfoVersionName[128]        = "1.0.0";
 CHAR8 mSysInfoSerial[sizeof (UINT64) * 2 + 1] = "Not Specified";
 CHAR8 mSysInfoSKU[sizeof (UINT64) * 2 + 1]    = "Not Specified";
 
@@ -472,6 +478,63 @@ LogSmbiosData (
   ASSERT_EFI_ERROR (Status);
   FreePool (Record);
   return Status;
+}
+
+/**
+  Fill the System Version string from the device tree.
+
+  The emulator puts the version of the uemu-ng binary that created this
+  machine in the root node's "uotan,emulator-version" property.  That is
+  what SMBIOS Type 1 (and Type 2, which shares the string) should report.
+  mSysInfoVersionName keeps its default when the property is unusable.
+**/
+STATIC
+VOID
+LogSystemVersion (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  CONST VOID  *Fdt;
+  CONST CHAR8 *Version;
+  INT32       Root;
+
+  Status = UemuFdtDeviceTreeBase (&Fdt);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: no device tree, version stays '%a'\n",
+            __func__, mSysInfoVersionName));
+    return;
+  }
+
+  Root = FdtPathOffset (Fdt, "/");
+  if (Root < 0) {
+    return;
+  }
+
+  Status = UemuFdtGetString (Root, "uotan,emulator-version", &Version);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: no uotan,emulator-version, keeping '%a'\n",
+            __func__, mSysInfoVersionName));
+    return;
+  }
+
+  //
+  // Never trust an arbitrary-length device tree string: copy at most the
+  // buffer size, and AsciiStrnCpyS keeps the terminator.
+  //
+  AsciiStrnCpyS (
+    mSysInfoVersionName,
+    sizeof (mSysInfoVersionName),
+    Version,
+    sizeof (mSysInfoVersionName) - 1
+    );
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: emulator version = %a\n",
+    __func__,
+    mSysInfoVersionName
+    ));
 }
 
 /**
@@ -915,6 +978,12 @@ PlatformSmbiosDriverEntryPoint (
                   (VOID **)&FdtClient
                   );
   ASSERT_EFI_ERROR (Status);
+
+  //
+  // System version comes from the emulator's device tree, so it has to be
+  // read before the Type 1 record (and Type 2, which reuses the string).
+  //
+  LogSystemVersion ();
 
   //
   // TYPE0 BIOS Information

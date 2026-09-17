@@ -3,9 +3,9 @@
 
   Produces EFI_SIMPLE_TEXT_INPUT_PROTOCOL and
   EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL for the Goldfish Events virtual
-  keyboard device. Discovers the device from FDT (compatible
-  "google,goldfish-events-keypad") or falls back to the hardcoded default
-  MMIO base 0x10002000.
+  keyboard device, discovered from the device tree via the compatible
+  string "google,goldfish-events-keypad".  When that node is absent the
+  machine simply has no keyboard and the driver installs nothing.
 
   The SimpleTextInputEx protocol is required for BDS hotkey support
   (e.g. "press ESC within X seconds" to enter the boot manager menu).
@@ -44,9 +44,7 @@
 #define EV_ABS       0x03
 #define PAGE_ABSDATA (0x20000 | EV_ABS)  // 0x20003
 
-// Default MMIO window; overridden by FDT when available
-#define GOLDFISH_EVENTS_DEFAULT_BASE  0x10002000ULL
-#define GOLDFISH_EVENTS_SIZE          0x1000ULL
+// Device tree compatible string for the Goldfish Events keyboard
 #define GOLDFISH_EVENTS_COMPATIBLE    "google,goldfish-events-keypad"
 
 // Polling interval in 100 ns units (10 ms)
@@ -909,12 +907,13 @@ GoldfishEventsWaitForKeyEx (
 }
 
 // ---------------------------------------------------------------------------
-// Discover the device via FDT or fall back to the hardcoded default
+// Discover the device in the device tree the emulator built
 // ---------------------------------------------------------------------------
 STATIC
 EFI_STATUS
 DiscoverMmioBase (
-  OUT EFI_PHYSICAL_ADDRESS  *Base
+  OUT EFI_PHYSICAL_ADDRESS  *Base,
+  OUT UINT64                *Size
   )
 {
   EFI_STATUS                   Status;
@@ -929,14 +928,9 @@ DiscoverMmioBase (
                   (VOID **)&FdtClient
                   );
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_INFO,
-      "%a: FdtClient protocol not found, using default base 0x%llx\n",
-      __func__,
-      GOLDFISH_EVENTS_DEFAULT_BASE
-      ));
-    *Base = GOLDFISH_EVENTS_DEFAULT_BASE;
-    return EFI_SUCCESS;
+    DEBUG ((DEBUG_WARN, "%a: FdtClient protocol not found: %r\n",
+            __func__, Status));
+    return Status;
   }
 
   Status = FdtClient->FindCompatibleNodeReg (
@@ -948,26 +942,30 @@ DiscoverMmioBase (
                         &RegSize
                         );
   if (EFI_ERROR (Status)) {
+    //
+    // No such node means the machine has no keyboard, which is a normal
+    // absence rather than a reason to probe a guessed address.
+    //
     DEBUG ((
       DEBUG_INFO,
-      "%a: '%a' not found in FDT, using default base 0x%llx\n",
+      "%a: '%a' not found in FDT\n",
       __func__,
-      GOLDFISH_EVENTS_COMPATIBLE,
-      GOLDFISH_EVENTS_DEFAULT_BASE
+      GOLDFISH_EVENTS_COMPATIBLE
       ));
-    *Base = GOLDFISH_EVENTS_DEFAULT_BASE;
-    return EFI_SUCCESS;
+    return Status;
   }
 
   // FDT reg is big-endian; SwapBytes32 each cell.
   // #address-cells == 2, #size-cells == 2 => 4 × UINT32.
   *Base = LShiftU64 (SwapBytes32 (RegProp[0]), 32) | SwapBytes32 (RegProp[1]);
+  *Size = LShiftU64 (SwapBytes32 (RegProp[2]), 32) | SwapBytes32 (RegProp[3]);
 
   DEBUG ((
     DEBUG_INFO,
-    "%a: Goldfish Events found in FDT at MMIO 0x%llx\n",
+    "%a: Goldfish Events found in FDT at MMIO 0x%llx (0x%llx bytes)\n",
     __func__,
-    *Base
+    *Base,
+    *Size
     ));
 
   return EFI_SUCCESS;
@@ -986,8 +984,9 @@ GoldfishEventsDxeInitialize (
   EFI_STATUS             Status;
   GOLDFISH_EVENTS_DEV    *Dev;
   EFI_PHYSICAL_ADDRESS   MmioBase;
+  UINT64                 MmioSize;
 
-  Status = DiscoverMmioBase (&MmioBase);
+  Status = DiscoverMmioBase (&MmioBase, &MmioSize);
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -996,7 +995,7 @@ GoldfishEventsDxeInitialize (
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
                   MmioBase,
-                  GOLDFISH_EVENTS_SIZE,
+                  MmioSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
                   );
   if (EFI_ERROR (Status)) {
@@ -1010,7 +1009,7 @@ GoldfishEventsDxeInitialize (
 
   Status = gDS->SetMemorySpaceAttributes (
                   MmioBase,
-                  GOLDFISH_EVENTS_SIZE,
+                  MmioSize,
                   EFI_MEMORY_UC
                   );
   if (EFI_ERROR (Status)) {

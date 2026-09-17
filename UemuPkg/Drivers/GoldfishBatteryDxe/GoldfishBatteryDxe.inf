@@ -20,17 +20,21 @@
 
 [Sources]
   GoldfishBatteryDxe.c
+  UemuPkg/Include/Library/UemuFdtLib.h
 
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
   DebugLib
   DxeServicesTableLib
+  FdtLib
+  HobLib
   IoLib
   MemoryAllocationLib
   PrintLib
@@ -41,6 +45,9 @@
 [Protocols]
   gFdtClientProtocolGuid          # PROTOCOL ALWAYS_CONSUMED
   gEfiSmbiosProtocolGuid          # PROTOCOL ALWAYS_CONSUMED
+
+[Guids]
+  gFdtHobGuid
 
 [Depex]
   gFdtClientProtocolGuid AND gEfiSmbiosProtocolGuid

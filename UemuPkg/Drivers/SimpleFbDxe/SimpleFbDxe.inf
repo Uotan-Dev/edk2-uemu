@@ -17,6 +17,7 @@
 
 [Sources.common]
   SimpleFbDxe.c
+  UemuPkg/Include/Library/UemuFdtLib.h
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -26,7 +27,6 @@
 
 [LibraryClasses]
   BaseLib
-  ReportStatusCodeLib
   UefiLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
@@ -34,19 +34,15 @@
   DebugLib
   CacheMaintenanceLib
   FrameBufferBltLib
-  PcdLib
+  FdtLib
+  HobLib
 
 [Protocols]
   gEfiGraphicsOutputProtocolGuid ## PRODUCES
   gEfiCpuArchProtocolGuid
 
 [Guids]
-  gEfiMdeModulePkgTokenSpaceGuid
-
-[Pcd]
-  gUemuTokenSpaceGuid.PcdFrameBufferWidth
-  gUemuTokenSpaceGuid.PcdFrameBufferHeight
-  gUemuTokenSpaceGuid.PcdFrameBufferBaseAddress
+  gFdtHobGuid
 
 [Depex]
   gEfiCpuArchProtocolGuid

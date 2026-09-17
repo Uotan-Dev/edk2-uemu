@@ -106,8 +106,6 @@
 // ---------------------------------------------------------------------------
 // Device constants
 // ---------------------------------------------------------------------------
-#define GOLDFISH_BATTERY_DEFAULT_BASE  0x10003000ULL
-#define GOLDFISH_BATTERY_MMIO_SIZE     0x1000ULL
 #define GOLDFISH_BATTERY_COMPATIBLE    "google,goldfish-battery"
 
 // ---------------------------------------------------------------------------
@@ -381,12 +379,13 @@ LogBatterySmbios (
 }
 
 // ---------------------------------------------------------------------------
-// Discover MMIO base from FDT, with hardcoded fallback
+// Discover the device in the device tree the emulator built
 // ---------------------------------------------------------------------------
 STATIC
 EFI_STATUS
 DiscoverMmioBase (
-  OUT EFI_PHYSICAL_ADDRESS  *Base
+  OUT EFI_PHYSICAL_ADDRESS  *Base,
+  OUT UINT64                *Size
   )
 {
   EFI_STATUS           Status;
@@ -401,14 +400,9 @@ DiscoverMmioBase (
                   (VOID **)&FdtClient
                   );
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_INFO,
-      "%a: FdtClient protocol not found, using default base 0x%llx\n",
-      __func__,
-      GOLDFISH_BATTERY_DEFAULT_BASE
-      ));
-    *Base = GOLDFISH_BATTERY_DEFAULT_BASE;
-    return EFI_SUCCESS;
+    DEBUG ((DEBUG_WARN, "%a: FdtClient protocol not found: %r\n",
+            __func__, Status));
+    return Status;
   }
 
   Status = FdtClient->FindCompatibleNodeReg (
@@ -420,15 +414,17 @@ DiscoverMmioBase (
                         &RegSize
                         );
   if (EFI_ERROR (Status)) {
+    //
+    // No such node means the machine has no battery, which is a normal
+    // absence rather than a reason to probe a guessed address.
+    //
     DEBUG ((
       DEBUG_INFO,
-      "%a: '%a' not found in FDT, using default base 0x%llx\n",
+      "%a: '%a' not found in FDT\n",
       __func__,
-      GOLDFISH_BATTERY_COMPATIBLE,
-      GOLDFISH_BATTERY_DEFAULT_BASE
+      GOLDFISH_BATTERY_COMPATIBLE
       ));
-    *Base = GOLDFISH_BATTERY_DEFAULT_BASE;
-    return EFI_SUCCESS;
+    return Status;
   }
 
   //
@@ -437,12 +433,15 @@ DiscoverMmioBase (
   //
   *Base = LShiftU64 (SwapBytes32 (RegProp[0]), 32)
           | SwapBytes32 (RegProp[1]);
+  *Size = LShiftU64 (SwapBytes32 (RegProp[2]), 32)
+          | SwapBytes32 (RegProp[3]);
 
   DEBUG ((
     DEBUG_INFO,
-    "%a: Goldfish Battery found in FDT at MMIO 0x%llx\n",
+    "%a: Goldfish Battery found in FDT at MMIO 0x%llx (0x%llx bytes)\n",
     __func__,
-    *Base
+    *Base,
+    *Size
     ));
 
   return EFI_SUCCESS;
@@ -461,12 +460,13 @@ GoldfishBatteryDxeInitialize (
   EFI_STATUS               Status;
   GOLDFISH_BATTERY_DEV     *Dev;
   EFI_PHYSICAL_ADDRESS     MmioBase;
+  UINT64                   MmioSize;
   GOLDFISH_BATTERY_INFO    Info;
 
   //
-  // 1. Discover the device via FDT (or fall back to default)
+  // 1. Discover the device in the device tree
   //
-  Status = DiscoverMmioBase (&MmioBase);
+  Status = DiscoverMmioBase (&MmioBase, &MmioSize);
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -477,7 +477,7 @@ GoldfishBatteryDxeInitialize (
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
                   MmioBase,
-                  GOLDFISH_BATTERY_MMIO_SIZE,
+                  MmioSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
                   );
   if (EFI_ERROR (Status)) {
@@ -491,7 +491,7 @@ GoldfishBatteryDxeInitialize (
 
   Status = gDS->SetMemorySpaceAttributes (
                   MmioBase,
-                  GOLDFISH_BATTERY_MMIO_SIZE,
+                  MmioSize,
                   EFI_MEMORY_UC
                   );
   if (EFI_ERROR (Status)) {

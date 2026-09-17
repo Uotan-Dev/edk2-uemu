@@ -20,15 +20,20 @@
 
 [Sources]
   Bcm2835RngDxe.c
+  Bcm2835Rng.h
+  UemuPkg/Include/Library/UemuFdtLib.h
 
 [Packages]
   MdePkg/MdePkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
   DebugLib
   DxeServicesTableLib
+  FdtLib
+  HobLib
   IoLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
@@ -38,6 +43,7 @@
 
 [Guids]
   gEfiRngAlgorithmRaw
+  gFdtHobGuid
 
 [Depex]
   TRUE

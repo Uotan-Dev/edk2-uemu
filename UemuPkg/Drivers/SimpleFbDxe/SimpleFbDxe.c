@@ -16,20 +16,13 @@
 #include <Library/DxeServicesTableLib.h>
 #include <Library/FrameBufferBltLib.h>
 #include <Library/MemoryAllocationLib.h>
-#include <Library/PcdLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 
+#include <Library/UemuFdtLib.h>
+
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/Cpu.h>
-
-/// Defines
-/*
- * Convert enum video_log2_bpp to bytes and bits. Note we omit the outer
- * brackets to allow multiplication by fractional pixels.
- */
-#define VNBYTES(bpix) (1 << (bpix)) / 8
-#define VNBITS(bpix) (1 << (bpix))
 
 #define POS_TO_FB(posX, posY)                                                  \
   ((UINT8                                                                      \
@@ -37,24 +30,6 @@
 
 #define FB_BITS_PER_PIXEL (32)
 #define FB_BYTES_PER_PIXEL (FB_BITS_PER_PIXEL / 8)
-
-#define DISPLAYDXE_RED_MASK 0xFF0000
-#define DISPLAYDXE_GREEN_MASK 0x00FF00
-#define DISPLAYDXE_BLUE_MASK 0x0000FF
-#define DISPLAYDXE_ALPHA_MASK 0x000000
-
-/*
- * Bits per pixel selector. Each value n is such that the bits-per-pixel is
- * 2 ^ n
- */
-enum video_log2_bpp {
-  VIDEO_BPP1 = 0,
-  VIDEO_BPP2,
-  VIDEO_BPP4,
-  VIDEO_BPP8,
-  VIDEO_BPP16,
-  VIDEO_BPP32,
-};
 
 typedef struct {
   VENDOR_DEVICE_PATH DisplayDevicePath;
@@ -171,6 +146,8 @@ SetSimpleFrameBufferMemoryAttributes(
 {
   EFI_CPU_ARCH_PROTOCOL *CpuArch = NULL;
   EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  WindowBase;
+  UINT64                WindowSize;
 
   Status = gBS->LocateProtocol(&gEfiCpuArchProtocolGuid, NULL, (VOID **)&CpuArch);
   if (EFI_ERROR(Status) || CpuArch == NULL) {
@@ -178,10 +155,19 @@ SetSimpleFrameBufferMemoryAttributes(
     return Status;
   }
 
+  /*
+   * The stride comes from the device tree, so the framebuffer length need
+   * not be a whole number of pages; the CPU attributes only apply to whole
+   * pages, so widen a copy of the range to cover the framebuffer.
+   */
+  WindowBase = FrameBufferBase;
+  WindowSize = FrameBufferSize;
+  UemuFdtRegionToPageWindow(&WindowBase, &WindowSize);
+
   Status = CpuArch->SetMemoryAttributes(
       CpuArch,
-      FrameBufferBase,
-      FrameBufferSize,
+      WindowBase,
+      (UINTN)WindowSize,
       EFI_MEMORY_WT | EFI_MEMORY_XP);
 
   if (EFI_ERROR(Status)) {
@@ -199,23 +185,82 @@ EFIAPI
 SimpleFbDxeInitialize(
     IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
+  EFI_STATUS            Status;
+  EFI_HANDLE            hUEFIDisplayHandle = NULL;
+  CONST CHAR8           *Format;
+  INT32                 Node;
+  UINT32                Width;
+  UINT32                Height;
+  UINT32                Stride;
+  UINT32                PixelsPerScanLine;
+  UINT64                RegionSize;
+  UINT64                FrameBufferSize;
+  EFI_PHYSICAL_ADDRESS  FrameBufferBase;
 
-  EFI_STATUS Status             = EFI_SUCCESS;
-  EFI_HANDLE hUEFIDisplayHandle = NULL;
+  /*
+   * The framebuffer is one of the devices uemu-ng creates, so its address
+   * and geometry come from the device tree; nothing here guesses a layout.
+   */
+  Status = UemuFdtFindNode("simple-framebuffer", &Node);
+  if (Status == EFI_NOT_FOUND) {
+    DEBUG((DEBUG_INFO, "SimpleFbDxe: no simple-framebuffer device\n"));
+    return EFI_NOT_FOUND;
+  }
 
-  /* Retrieve frame buffer from pre-SEC bootloader */
-  DEBUG(
-      (EFI_D_INFO,
-       "SimpleFbDxe: Retrieve FrameBuffer parameters from PCD\n"));
+  if (EFI_ERROR(Status))
+    return Status;
 
-  UINT64 MipiFrameBufferAddr = PcdGet64(PcdFrameBufferBaseAddress);
-  UINT32 MipiFrameBufferWidth  = PcdGet32(PcdFrameBufferWidth);
-  UINT32 MipiFrameBufferHeight = PcdGet32(PcdFrameBufferHeight);
+  Status = UemuFdtNodeReg(Node, &FrameBufferBase, &RegionSize);
+  if (EFI_ERROR(Status))
+    return Status;
 
-  /* Sanity check */
-  if (MipiFrameBufferAddr == 0 || MipiFrameBufferWidth == 0 ||
-      MipiFrameBufferHeight == 0) {
-    DEBUG((EFI_D_ERROR, "SimpleFbDxe: Invalid FrameBuffer parameters\n"));
+  Status = UemuFdtGetUint32(Node, "width", &Width);
+  if (EFI_ERROR(Status))
+    return Status;
+
+  Status = UemuFdtGetUint32(Node, "height", &Height);
+  if (EFI_ERROR(Status))
+    return Status;
+
+  Status = UemuFdtGetUint32(Node, "stride", &Stride);
+  if (EFI_ERROR(Status))
+    return Status;
+
+  Status = UemuFdtGetString(Node, "format", &Format);
+  if (EFI_ERROR(Status))
+    return Status;
+
+  /* uemu-ng SimpleFB runs on XRGB 8:8:8:8 */
+  if (AsciiStrCmp(Format, "x8r8g8b8") != 0) {
+    DEBUG((DEBUG_ERROR, "SimpleFbDxe: unsupported format '%a'\n", Format));
+    return EFI_UNSUPPORTED;
+  }
+
+  /*
+   * The stride is the line pitch in bytes, so it has to cover the visible
+   * pixels; it may be wider than they need.
+   */
+  if (Width == 0 || Height == 0 || Stride == 0 ||
+      (Stride % FB_BYTES_PER_PIXEL) != 0) {
+    DEBUG((DEBUG_ERROR,
+           "SimpleFbDxe: bad geometry %ux%u stride %u\n",
+           Width, Height, Stride));
+    return EFI_DEVICE_ERROR;
+  }
+
+  PixelsPerScanLine = Stride / FB_BYTES_PER_PIXEL;
+  if (PixelsPerScanLine < Width) {
+    DEBUG((DEBUG_ERROR,
+           "SimpleFbDxe: stride %u is narrower than %u pixels\n",
+           Stride, Width));
+    return EFI_DEVICE_ERROR;
+  }
+
+  FrameBufferSize = (UINT64)Stride * Height;
+  if (FrameBufferSize > RegionSize || FrameBufferSize > MAX_UINT32) {
+    DEBUG((DEBUG_ERROR,
+           "SimpleFbDxe: framebuffer needs 0x%llx bytes, region gives 0x%llx\n",
+           FrameBufferSize, RegionSize));
     return EFI_DEVICE_ERROR;
   }
 
@@ -249,24 +294,18 @@ SimpleFbDxeInitialize(
   mDisplay.Mode->Mode          = 0;
   mDisplay.Mode->Info->Version = 0;
 
-  mDisplay.Mode->Info->HorizontalResolution = MipiFrameBufferWidth;
-  mDisplay.Mode->Info->VerticalResolution   = MipiFrameBufferHeight;
+  mDisplay.Mode->Info->HorizontalResolution = Width;
+  mDisplay.Mode->Info->VerticalResolution   = Height;
 
-  /* uemu-ng SimpleFB runs on XRGB 8:8:8:8 */
-  UINT32               LineLength = MipiFrameBufferWidth * VNBYTES(VIDEO_BPP32);
-  UINT32               FrameBufferSize    = LineLength * MipiFrameBufferHeight;
-  EFI_PHYSICAL_ADDRESS FrameBufferAddress = MipiFrameBufferAddr;
-
-  mDisplay.Mode->Info->PixelsPerScanLine = MipiFrameBufferWidth;
+  mDisplay.Mode->Info->PixelsPerScanLine = PixelsPerScanLine;
   mDisplay.Mode->Info->PixelFormat = PixelBlueGreenRedReserved8BitPerColor;
   mDisplay.Mode->SizeOfInfo      = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
-  mDisplay.Mode->FrameBufferBase = FrameBufferAddress;
-  mDisplay.Mode->FrameBufferSize = FrameBufferSize;
+  mDisplay.Mode->FrameBufferBase = FrameBufferBase;
+  mDisplay.Mode->FrameBufferSize = (UINTN)FrameBufferSize;
 
   /* Memory property configuration */
   SetSimpleFrameBufferMemoryAttributes(
-      (EFI_PHYSICAL_ADDRESS)FrameBufferAddress,
-      FrameBufferSize);
+      FrameBufferBase, (UINTN)FrameBufferSize);
 
   /* Create the FrameBufferBltLib configuration. */
   Status = FrameBufferBltConfigure(
@@ -283,9 +322,9 @@ SimpleFbDxeInitialize(
   }
   ASSERT_EFI_ERROR(Status);
 
-  DEBUG((EFI_D_INFO, "SimpleFbDxe: FB at 0x%08llX, %dx%d\n",
-         FrameBufferAddress, MipiFrameBufferWidth, MipiFrameBufferHeight));
-  ZeroMem((VOID *)(UINTN)FrameBufferAddress, FrameBufferSize);
+  DEBUG((DEBUG_INFO, "SimpleFbDxe: FB at 0x%08llX, %ux%u stride %u\n",
+         FrameBufferBase, Width, Height, Stride));
+  ZeroMem((VOID *)(UINTN)FrameBufferBase, (UINTN)FrameBufferSize);
 
   /* Register handle */
   Status = gBS->InstallMultipleProtocolInterfaces(
