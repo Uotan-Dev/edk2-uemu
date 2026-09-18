@@ -83,6 +83,7 @@
 
   # Flattened Device Tree (FDT) access library
   FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
+  UemuFdtLib|UemuPkg/Library/UemuFdtLib/UemuFdtLib.inf
 
   # PCI Libraries (needed by SerialPortLib even though platform has no PCI)
   PciLib|MdePkg/Library/BasePciLibPciExpress/BasePciLibPciExpress.inf

@@ -25,6 +25,7 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   BaseLib
@@ -34,13 +35,13 @@
   IoLib
   MemoryAllocationLib
   PrintLib
+  UemuFdtLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
 
 [Protocols]
-  gFdtClientProtocolGuid          # PROTOCOL ALWAYS_CONSUMED
   gEfiSmbiosProtocolGuid          # PROTOCOL ALWAYS_CONSUMED
 
 [Depex]
-  gFdtClientProtocolGuid AND gEfiSmbiosProtocolGuid
+  gEfiSmbiosProtocolGuid

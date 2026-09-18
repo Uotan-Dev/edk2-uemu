@@ -23,6 +23,7 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   IoLib
@@ -33,8 +34,7 @@
   PcdLib
   DxeServicesTableLib
   BaseMemoryLib
-  HobLib
+  UemuFdtLib
 
 [Guids]
   gEfiEventVirtualAddressChangeGuid
-  gFdtHobGuid

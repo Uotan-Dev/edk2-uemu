@@ -11,6 +11,8 @@
 
 #include "PlatformSecLib.h"
 
+#include <Library/UemuFdtLib.h>
+
 VOID
 BuildMemoryTypeHob (
   VOID
@@ -99,43 +101,6 @@ InitializeRamRegions (
     );
 }
 
-/** Get the number of cells for a given property
-
-  @param[in]  Fdt   Pointer to Device Tree (DTB)
-  @param[in]  Node  Node
-  @param[in]  Name  Name of the property
-
-  @return           Number of cells.
-**/
-STATIC
-INT32
-GetNumCells (
-  IN VOID         *Fdt,
-  IN INT32        Node,
-  IN CONST CHAR8  *Name
-  )
-{
-  CONST INT32  *Prop;
-  INT32        Len;
-  UINT32       Val;
-
-  Prop = FdtGetProp (Fdt, Node, Name, &Len);
-  if (Prop == NULL) {
-    return Len;
-  }
-
-  if (Len != sizeof (*Prop)) {
-    return -FDT_ERR_BADNCELLS;
-  }
-
-  Val = Fdt32ToCpu (*Prop);
-  if (Val > FDT_MAX_NCELLS) {
-    return -FDT_ERR_BADNCELLS;
-  }
-
-  return (INT32)Val;
-}
-
 /** Mark reserved memory ranges in the EFI memory map
 
  * As per DT spec v0.4 Section 3.5.4,
@@ -152,14 +117,14 @@ AddReservedMemoryMap (
   IN VOID  *FdtPointer
   )
 {
-  CONST INT32           *RegProp;
+  EFI_STATUS            Status;
   INT32                 Node;
   INT32                 SubNode;
   INT32                 Len;
   EFI_PHYSICAL_ADDRESS  Addr;
   UINT64                Size;
   INTN                  NumRsv, i;
-  INT32                 NumAddrCells, NumSizeCells;
+  UINTN                 Index;
 
   NumRsv = FdtGetNumberOfReserveMapEntries (FdtPointer);
 
@@ -169,41 +134,35 @@ AddReservedMemoryMap (
       continue;
     }
 
-    BuildMemoryAllocationHob (
-      Addr,
-      Size,
-      EfiReservedMemoryType
-      );
+    if ((Size != 0) && (Addr <= MAX_UINT64 - Size)) {
+      BuildMemoryAllocationHob (
+        Addr,
+        Size,
+        EfiReservedMemoryType
+        );
+    }
   }
 
   /* process reserved-memory */
   Node = FdtSubnodeOffset (FdtPointer, 0, "reserved-memory");
   if (Node >= 0) {
-    NumAddrCells = GetNumCells (FdtPointer, Node, "#address-cells");
-    if (NumAddrCells <= 0) {
-      return;
-    }
-
-    NumSizeCells = GetNumCells (FdtPointer, Node, "#size-cells");
-    if (NumSizeCells <= 0) {
-      return;
-    }
-
     FdtForEachSubnode (SubNode, FdtPointer, Node) {
-      RegProp = FdtGetProp (FdtPointer, SubNode, "reg", &Len);
-
-      if ((RegProp != 0) && (Len == ((NumAddrCells + NumSizeCells) * sizeof (INT32)))) {
-        Addr = Fdt32ToCpu (RegProp[0]);
-
-        if (NumAddrCells > 1) {
-          Addr = (Addr << 32) | Fdt32ToCpu (RegProp[1]);
+      for (Index = 0; ; Index++) {
+        Status = UemuFdtGetReg (
+                   FdtPointer,
+                   SubNode,
+                   Index,
+                   &Addr,
+                   &Size
+                   );
+        if (Status == EFI_NOT_FOUND) {
+          break;
         }
 
-        RegProp += NumAddrCells;
-        Size     = Fdt32ToCpu (RegProp[0]);
-
-        if (NumSizeCells > 1) {
-          Size = (Size << 32) | Fdt32ToCpu (RegProp[1]);
+        if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_ERROR, "%a: invalid reserved-memory reg: %r\n",
+                  __func__, Status));
+          break;
         }
 
         DEBUG ((
@@ -247,11 +206,13 @@ MemoryInitialization (
   VOID  *FdtPointer
   )
 {
-  CONST UINT64  *RegProp;
+  EFI_STATUS    Status;
   CONST CHAR8   *Type;
-  UINT64        CurBase, CurSize;
+  EFI_PHYSICAL_ADDRESS  CurBase;
+  UINT64        CurSize;
   INT32         Node, Prev;
   INT32         Len;
+  UINTN         Index;
 
   // Look for the lowest memory node
   for (Prev = 0; ; Prev = Node) {
@@ -262,13 +223,26 @@ MemoryInitialization (
 
     // Check for memory node
     Type = FdtGetProp (FdtPointer, Node, "device_type", &Len);
-    if (Type && (AsciiStrnCmp (Type, "memory", Len) == 0)) {
-      // Get the 'reg' property of this node. For now, we will assume
-      // two 8 byte quantities for base and size, respectively.
-      RegProp = FdtGetProp (FdtPointer, Node, "reg", &Len);
-      if ((RegProp != 0) && (Len == (2 * sizeof (UINT64)))) {
-        CurBase = Fdt64ToCpu (ReadUnaligned64 (RegProp));
-        CurSize = Fdt64ToCpu (ReadUnaligned64 (RegProp + 1));
+    if ((Type != NULL) && (Len == sizeof ("memory")) &&
+        (AsciiStrCmp (Type, "memory") == 0))
+    {
+      for (Index = 0; ; Index++) {
+        Status = UemuFdtGetReg (
+                   FdtPointer,
+                   Node,
+                   Index,
+                   &CurBase,
+                   &CurSize
+                   );
+        if (Status == EFI_NOT_FOUND) {
+          break;
+        }
+
+        if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_ERROR, "%a: Failed to parse FDT memory node: %r\n",
+                  __func__, Status));
+          break;
+        }
 
         DEBUG ((
           DEBUG_INFO,
@@ -282,12 +256,6 @@ MemoryInitialization (
           CurBase,
           CurSize
           );
-      } else {
-        DEBUG ((
-          DEBUG_ERROR,
-          "%a: Failed to parse FDT memory node\n",
-          __func__
-          ));
       }
     }
   }

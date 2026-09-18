@@ -1,0 +1,31 @@
+## @file
+#  Device-tree helpers for the uemu platform.
+#
+#  Copyright (c) 2026 Nuo Shen, Nanjing University
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 1.30
+  BASE_NAME                      = UemuFdtLib
+  FILE_GUID                      = 8BB47918-CB6A-42A0-A8B4-1410C6952A49
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = UemuFdtLib
+
+[Sources]
+  UemuFdtLib.c
+
+[Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
+  MdePkg/MdePkg.dec
+  UemuPkg/UemuPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  FdtLib
+  HobLib
+
+[Guids]
+  gFdtHobGuid

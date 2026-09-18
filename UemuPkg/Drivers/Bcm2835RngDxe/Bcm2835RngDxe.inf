@@ -22,7 +22,9 @@
   Bcm2835RngDxe.c
 
 [Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
   MdePkg/MdePkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   BaseLib
@@ -30,6 +32,7 @@
   DebugLib
   DxeServicesTableLib
   IoLib
+  UemuFdtLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 

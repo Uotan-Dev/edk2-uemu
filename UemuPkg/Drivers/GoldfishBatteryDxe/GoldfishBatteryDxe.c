@@ -40,10 +40,10 @@
 #include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
+#include <Library/UemuFdtLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/UefiLib.h>
-#include <Protocol/FdtClient.h>
 #include <Protocol/Smbios.h>
 
 // ---------------------------------------------------------------------------
@@ -106,8 +106,6 @@
 // ---------------------------------------------------------------------------
 // Device constants
 // ---------------------------------------------------------------------------
-#define GOLDFISH_BATTERY_DEFAULT_BASE  0x10003000ULL
-#define GOLDFISH_BATTERY_MMIO_SIZE     0x1000ULL
 #define GOLDFISH_BATTERY_COMPATIBLE    "google,goldfish-battery"
 
 // ---------------------------------------------------------------------------
@@ -381,71 +379,29 @@ LogBatterySmbios (
 }
 
 // ---------------------------------------------------------------------------
-// Discover MMIO base from FDT, with hardcoded fallback
+// Discover the MMIO range from FDT
 // ---------------------------------------------------------------------------
 STATIC
 EFI_STATUS
-DiscoverMmioBase (
-  OUT EFI_PHYSICAL_ADDRESS  *Base
+DiscoverMmioRange (
+  OUT EFI_PHYSICAL_ADDRESS  *Base,
+  OUT UINT64                *Size
   )
 {
-  EFI_STATUS           Status;
-  FDT_CLIENT_PROTOCOL  *FdtClient;
-  CONST UINT32         *RegProp;
-  UINTN                AddressCells, SizeCells;
-  UINT32               RegSize;
+  EFI_STATUS  Status;
+  CONST VOID  *Fdt;
+  INT32       Node;
 
-  Status = gBS->LocateProtocol (
-                  &gFdtClientProtocolGuid,
-                  NULL,
-                  (VOID **)&FdtClient
-                  );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_INFO,
-      "%a: FdtClient protocol not found, using default base 0x%llx\n",
-      __func__,
-      GOLDFISH_BATTERY_DEFAULT_BASE
-      ));
-    *Base = GOLDFISH_BATTERY_DEFAULT_BASE;
-    return EFI_SUCCESS;
+  Status = UemuFdtGet (&Fdt);
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtFindCompatibleNode (Fdt, GOLDFISH_BATTERY_COMPATIBLE, &Node);
   }
 
-  Status = FdtClient->FindCompatibleNodeReg (
-                        FdtClient,
-                        GOLDFISH_BATTERY_COMPATIBLE,
-                        (CONST VOID **)&RegProp,
-                        &AddressCells,
-                        &SizeCells,
-                        &RegSize
-                        );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_INFO,
-      "%a: '%a' not found in FDT, using default base 0x%llx\n",
-      __func__,
-      GOLDFISH_BATTERY_COMPATIBLE,
-      GOLDFISH_BATTERY_DEFAULT_BASE
-      ));
-    *Base = GOLDFISH_BATTERY_DEFAULT_BASE;
-    return EFI_SUCCESS;
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetReg (Fdt, Node, 0, Base, Size);
   }
 
-  //
-  // FDT reg is big-endian; SwapBytes32 each cell.
-  // #address-cells == 2, #size-cells == 2 => 4 UINT32 cells.
-  //
-  *Base = LShiftU64 (SwapBytes32 (RegProp[0]), 32)
-          | SwapBytes32 (RegProp[1]);
-
-  DEBUG ((
-    DEBUG_INFO,
-    "%a: Goldfish Battery found in FDT at MMIO 0x%llx\n",
-    __func__,
-    *Base
-    ));
-
-  return EFI_SUCCESS;
+  return Status;
 }
 
 // ---------------------------------------------------------------------------
@@ -461,12 +417,27 @@ GoldfishBatteryDxeInitialize (
   EFI_STATUS               Status;
   GOLDFISH_BATTERY_DEV     *Dev;
   EFI_PHYSICAL_ADDRESS     MmioBase;
+  UINT64                   MmioSize;
+  EFI_PHYSICAL_ADDRESS     GcdBase;
+  UINT64                   GcdSize;
   GOLDFISH_BATTERY_INFO    Info;
 
   //
-  // 1. Discover the device via FDT (or fall back to default)
+  // 1. Discover the device via FDT
   //
-  Status = DiscoverMmioBase (&MmioBase);
+  Status = DiscoverMmioRange (&MmioBase, &MmioSize);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "%a: Goldfish Battery unavailable: %r\n", __func__, Status));
+    return Status;
+  }
+
+  if ((MmioBase > MAX_UINTN) ||
+      (MmioSize < REG_CYCLE_COUNT + sizeof (UINT32)))
+  {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  Status = UemuFdtAlignRange (MmioBase, MmioSize, &GcdBase, &GcdSize);
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -476,8 +447,8 @@ GoldfishBatteryDxeInitialize (
   //
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
-                  MmioBase,
-                  GOLDFISH_BATTERY_MMIO_SIZE,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
                   );
   if (EFI_ERROR (Status)) {
@@ -490,8 +461,8 @@ GoldfishBatteryDxeInitialize (
   }
 
   Status = gDS->SetMemorySpaceAttributes (
-                  MmioBase,
-                  GOLDFISH_BATTERY_MMIO_SIZE,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC
                   );
   if (EFI_ERROR (Status)) {

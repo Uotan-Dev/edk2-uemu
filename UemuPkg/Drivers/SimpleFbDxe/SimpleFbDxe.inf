@@ -34,7 +34,7 @@
   DebugLib
   CacheMaintenanceLib
   FrameBufferBltLib
-  PcdLib
+  UemuFdtLib
 
 [Protocols]
   gEfiGraphicsOutputProtocolGuid ## PRODUCES
@@ -42,11 +42,6 @@
 
 [Guids]
   gEfiMdeModulePkgTokenSpaceGuid
-
-[Pcd]
-  gUemuTokenSpaceGuid.PcdFrameBufferWidth
-  gUemuTokenSpaceGuid.PcdFrameBufferHeight
-  gUemuTokenSpaceGuid.PcdFrameBufferBaseAddress
 
 [Depex]
   gEfiCpuArchProtocolGuid

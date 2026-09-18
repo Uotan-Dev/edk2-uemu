@@ -22,6 +22,7 @@
 #include <Library/HobLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
+#include <Library/UemuFdtLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/UefiLib.h>
@@ -123,7 +124,7 @@ SMBIOS_TABLE_TYPE1 mSysInfoType1 = {
 
 CHAR8 mSysInfoManufName[128]          = "Uotan";
 CHAR8 mSysInfoProductName[128]        = "Uotan RISC-V Emulator";
-CHAR8 mSysInfoVersionName[128]        = "1.1";
+CHAR8 mSysInfoVersionName[128]        = "1.0.0";
 CHAR8 mSysInfoSerial[sizeof (UINT64) * 2 + 1] = "Not Specified";
 CHAR8 mSysInfoSKU[sizeof (UINT64) * 2 + 1]    = "Not Specified";
 
@@ -371,6 +372,39 @@ SMBIOS_TABLE_TYPE19 mMemArrMapInfoType19 = {
   0, // ExtendedEndingAddress;
 };
 CHAR8 *mMemArrMapInfoType19Strings[] = { NULL };
+
+STATIC
+VOID
+UpdateEmulatorVersion (
+  VOID
+  )
+{
+  EFI_STATUS   Status;
+  CONST VOID   *Fdt;
+  CONST CHAR8  *Version;
+  UINTN        Size;
+
+  Status = UemuFdtGet (&Fdt);
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetString (
+               Fdt,
+               0,
+               "uotan,emulator-version",
+               &Version,
+               &Size
+               );
+  }
+
+  if (!EFI_ERROR (Status) && (Size <= sizeof (mSysInfoVersionName))) {
+    AsciiStrCpyS (mSysInfoVersionName, sizeof (mSysInfoVersionName), Version);
+  } else {
+    AsciiStrCpyS (
+      mSysInfoVersionName,
+      sizeof (mSysInfoVersionName),
+      "1.0.0"
+      );
+  }
+}
 
 /***********************************************************************
         SMBIOS data definition  TYPE32  Boot Information
@@ -915,6 +949,8 @@ PlatformSmbiosDriverEntryPoint (
                   (VOID **)&FdtClient
                   );
   ASSERT_EFI_ERROR (Status);
+
+  UpdateEmulatorVersion ();
 
   //
   // TYPE0 BIOS Information

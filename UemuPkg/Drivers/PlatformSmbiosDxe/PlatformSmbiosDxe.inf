@@ -23,6 +23,7 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   UefiDriverEntryPoint
@@ -35,6 +36,7 @@
   PrintLib
   UefiBootServicesTableLib
   UefiLib
+  UemuFdtLib
 
 [Guids]
   gFdtHobGuid

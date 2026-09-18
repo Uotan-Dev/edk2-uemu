@@ -20,6 +20,7 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
+  UemuPkg/UemuPkg.dec
 
 [LibraryClasses]
   BaseLib
@@ -28,6 +29,7 @@
   DxeServicesTableLib
   IoLib
   MemoryAllocationLib
+  UemuFdtLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
@@ -35,7 +37,5 @@
 [Protocols]
   gEfiSimpleTextInProtocolGuid
   gEfiSimpleTextInputExProtocolGuid
-  gFdtClientProtocolGuid
-
 [Depex]
   gEfiCpuArchProtocolGuid

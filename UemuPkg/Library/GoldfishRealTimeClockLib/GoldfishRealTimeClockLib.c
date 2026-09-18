@@ -15,12 +15,10 @@
 #include <Library/DxeServicesTableLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/TimeBaseLib.h>
-#include <Library/FdtLib.h>
-#include <Library/HobLib.h>
+#include <Library/UemuFdtLib.h>
 #include <Library/UefiRuntimeLib.h>
 
 #include <Guid/EventGroup.h>
-#include <Guid/FdtHob.h>
 
 #include "GoldfishRealTimeClock.h"
 
@@ -206,42 +204,35 @@ VirtualNotifyEvent (
 
 EFI_STATUS
 GetGoldfishRtcBase (
-  OUT  UINTN  *BaseAddress
+  OUT UINTN   *BaseAddress,
+  OUT UINT64  *MmioSize
   )
 {
-  VOID        *Hob;
-  VOID        *Base;
-  INT32       Node;
-  INT32       SubNode;
-  INT32       Len;
-  CONST VOID  *Data;
+  EFI_STATUS            Status;
+  CONST VOID            *Fdt;
+  INT32                 Node;
+  EFI_PHYSICAL_ADDRESS  Base;
 
-  Hob = GetFirstGuidHob (&gFdtHobGuid);
-  if ((Hob == NULL) || (GET_GUID_HOB_DATA_SIZE (Hob) != sizeof (UINT64))) {
-    return EFI_NOT_FOUND;
+  Status = UemuFdtGet (&Fdt);
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtFindCompatibleNode (Fdt, "google,goldfish-rtc", &Node);
   }
 
-  Base = (VOID *)(UINTN)*(UINT64 *)GET_GUID_HOB_DATA (Hob);
-  if (FdtCheckHeader (Base) != 0) {
-    return EFI_NOT_FOUND;
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetReg (Fdt, Node, 0, &Base, MmioSize);
   }
 
-  Node = FdtPathOffset (Base, "/soc");
-  if (Node < 0 ) {
-    return EFI_NOT_FOUND;
+  if (EFI_ERROR (Status)) {
+    return Status;
   }
 
-  SubNode = FdtNodeOffsetByCompatible (Base, Node, "google,goldfish-rtc");
-  if (SubNode < 0 ) {
-    return EFI_NOT_FOUND;
+  if ((Base > MAX_UINTN) ||
+      (*MmioSize < GOLDFISH_RTC_CLEAR_INTERRUPT + sizeof (UINT32)))
+  {
+    return EFI_COMPROMISED_DATA;
   }
 
-  Data = FdtGetProp (Base, SubNode, "reg", &Len);
-  if (Data == NULL) {
-    return EFI_LOAD_ERROR;
-  }
-
-  *BaseAddress = (UINTN)Fdt64ToCpu (*(UINT64 *)Data);
+  *BaseAddress = (UINTN)Base;
   return EFI_SUCCESS;
 }
 
@@ -263,19 +254,31 @@ LibRtcInitialize (
   )
 {
   EFI_STATUS  Status;
+  UINT64      MmioSize;
+  EFI_PHYSICAL_ADDRESS  GcdBase;
+  UINT64                GcdSize;
 
-  // initial RTC Base Address
-  Status = GetGoldfishRtcBase (&mRtcRegisterBase);
+  Status = GetGoldfishRtcBase (&mRtcRegisterBase, &MmioSize);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "Use Default Rtc Reg Base!\n"));
-    mRtcRegisterBase = GOLDFISH_RTC_DEFAULT_BASE;
+    DEBUG ((DEBUG_INFO, "%a: Goldfish RTC unavailable: %r\n", __func__, Status));
+    return Status;
+  }
+
+  Status = UemuFdtAlignRange (
+             mRtcRegisterBase,
+             MmioSize,
+             &GcdBase,
+             &GcdSize
+             );
+  if (EFI_ERROR (Status)) {
+    return Status;
   }
 
   // Declare the controller as EFI_MEMORY_RUNTIME
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
-                  mRtcRegisterBase,
-                  SIZE_4KB,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME | EFI_MEMORY_XP
                   );
   if (EFI_ERROR (Status)) {
@@ -283,8 +286,8 @@ LibRtcInitialize (
   }
 
   Status = gDS->SetMemorySpaceAttributes (
-                  mRtcRegisterBase,
-                  SIZE_4KB,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME | EFI_MEMORY_XP
                   );
   if (EFI_ERROR (Status)) {

@@ -8,6 +8,8 @@
 
 #include "PlatformSecLib.h"
 
+#include <Library/UemuFdtLib.h>
+
 /**
   Build memory map I/O range resource HOB using the
   base address and size.
@@ -23,16 +25,28 @@ AddIoMemoryBaseSizeHob (
   UINT64                MemorySize
   )
 {
-  /* Align to EFI_PAGE_SIZE */
-  MemorySize = ALIGN_VALUE (MemorySize, EFI_PAGE_SIZE);
+  EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  AlignedBase;
+  UINT64                AlignedSize;
+
+  Status = UemuFdtAlignRange (
+             MemoryBase,
+             MemorySize,
+             &AlignedBase,
+             &AlignedSize
+             );
+  if (EFI_ERROR (Status)) {
+    return;
+  }
+
   BuildResourceDescriptorHob (
     EFI_RESOURCE_MEMORY_MAPPED_IO,
     EFI_RESOURCE_ATTRIBUTE_PRESENT     |
     EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
     EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
     EFI_RESOURCE_ATTRIBUTE_TESTED,
-    MemoryBase,
-    MemorySize
+    AlignedBase,
+    AlignedSize
     );
 }
 
@@ -51,15 +65,19 @@ PopulateIoResources (
   CONST CHAR8  *Compatible
   )
 {
-  UINT64  *Reg;
-  INT32   Node, LenP;
+  EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  Base;
+  UINT64                Size;
+  INT32                 Node;
 
   Node = FdtNodeOffsetByCompatible (FdtBase, -1, Compatible);
   while (Node != -FDT_ERR_NOTFOUND) {
-    Reg = (UINT64 *)FdtGetProp (FdtBase, Node, "reg", &LenP);
-    if (Reg) {
-      ASSERT (LenP == (2 * sizeof (UINT64)));
-      AddIoMemoryBaseSizeHob (SwapBytes64 (Reg[0]), SwapBytes64 (Reg[1]));
+    Status = UemuFdtGetReg (FdtBase, Node, 0, &Base, &Size);
+    if (!EFI_ERROR (Status)) {
+      AddIoMemoryBaseSizeHob (Base, Size);
+    } else {
+      DEBUG ((DEBUG_ERROR, "%a: invalid '%a' reg property: %r\n",
+              __func__, Compatible, Status));
     }
 
     Node = FdtNodeOffsetByCompatible (FdtBase, Node, Compatible);
@@ -116,7 +134,7 @@ PlatformInitialization (
 
   PopulateIoResources (Base, "ns16550a");
   PopulateIoResources (Base, "virtio,mmio");
-  PopulateIoResources (Base, "uemu,simplefb");
+  PopulateIoResources (Base, "simple-framebuffer");
 
   return EFI_SUCCESS;
 }

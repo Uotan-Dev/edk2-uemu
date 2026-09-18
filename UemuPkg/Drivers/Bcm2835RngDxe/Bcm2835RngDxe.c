@@ -14,15 +14,17 @@
 #include <Library/DebugLib.h>
 #include <Library/DxeServicesTableLib.h>
 #include <Library/IoLib.h>
+#include <Library/UemuFdtLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
 #include "Bcm2835Rng.h"
 
 #include <Protocol/Rng.h>
 
-#define RNG_MMIO_SIZE            0x1000
 #define RNG_WARMUP_COUNT        0x40000
 #define RNG_MAX_RETRIES         0x100         // arbitrary upper bound
+
+STATIC EFI_PHYSICAL_ADDRESS  mRngBase;
 
 /**
   Returns information about the random number generation implementation.
@@ -145,7 +147,7 @@ Bcm2835RngGetRNG (
   while (RNGValueLength > 0) {
     Retries = RNG_MAX_RETRIES;
     do {
-      Num = MmioRead32 (RNG_STATUS) >> 24;
+      Num = MmioRead32 (mRngBase + RNG_STATUS) >> 24;
       MemoryFence ();
     } while (!Num && Retries-- > 0);
 
@@ -154,14 +156,14 @@ Bcm2835RngGetRNG (
     }
 
     while (RNGValueLength >= sizeof (UINT32) && Num > 0) {
-      WriteUnaligned32 ((VOID *)RNGValue, MmioRead32 (RNG_DATA));
+      WriteUnaligned32 ((VOID *)RNGValue, MmioRead32 (mRngBase + RNG_DATA));
       RNGValue += sizeof (UINT32);
       RNGValueLength -= sizeof (UINT32);
       Num--;
     }
 
     if (RNGValueLength > 0 && Num > 0) {
-      Val = MmioRead32 (RNG_DATA);
+      Val = MmioRead32 (mRngBase + RNG_DATA);
       while (RNGValueLength--) {
         *RNGValue++ = (UINT8)Val;
         Val >>= 8;
@@ -187,12 +189,40 @@ Bcm2835RngEntryPoint (
   )
 {
   EFI_STATUS      Status;
+  CONST VOID      *Fdt;
+  INT32           Node;
+  UINT64          MmioSize;
+  EFI_PHYSICAL_ADDRESS  GcdBase;
+  UINT64                GcdSize;
+
+  Status = UemuFdtGet (&Fdt);
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtFindCompatibleNode (Fdt, "brcm,bcm2835-rng", &Node);
+  }
+
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetReg (Fdt, Node, 0, &mRngBase, &MmioSize);
+  }
+
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "%a: RNG unavailable: %r\n", __func__, Status));
+    return Status;
+  }
+
+  if ((MmioSize < RNG_DATA + sizeof (UINT32)) || (mRngBase > MAX_UINTN)) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  Status = UemuFdtAlignRange (mRngBase, MmioSize, &GcdBase, &GcdSize);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   // Register the MMIO range in GCD as uncacheable MMIO before accessing it
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
-                  RNG_BASE_ADDRESS,
-                  RNG_MMIO_SIZE,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
                   );
   if (EFI_ERROR (Status)) {
@@ -205,8 +235,8 @@ Bcm2835RngEntryPoint (
   }
 
   Status = gDS->SetMemorySpaceAttributes (
-                  RNG_BASE_ADDRESS,
-                  RNG_MMIO_SIZE,
+                  GcdBase,
+                  GcdSize,
                   EFI_MEMORY_UC
                   );
   if (EFI_ERROR (Status)) {
@@ -224,8 +254,8 @@ Bcm2835RngEntryPoint (
                   NULL);
   ASSERT_EFI_ERROR (Status);
 
-  MmioWrite32 (RNG_STATUS, RNG_WARMUP_COUNT);
-  MmioWrite32 (RNG_CTRL, RNG_CTRL_ENABLE);
+  MmioWrite32 (mRngBase + RNG_STATUS, RNG_WARMUP_COUNT);
+  MmioWrite32 (mRngBase + RNG_CTRL, RNG_CTRL_ENABLE);
 
   return EFI_SUCCESS;
 }

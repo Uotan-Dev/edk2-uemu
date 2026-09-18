@@ -16,45 +16,14 @@
 #include <Library/DxeServicesTableLib.h>
 #include <Library/FrameBufferBltLib.h>
 #include <Library/MemoryAllocationLib.h>
-#include <Library/PcdLib.h>
+#include <Library/UemuFdtLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/Cpu.h>
 
-/// Defines
-/*
- * Convert enum video_log2_bpp to bytes and bits. Note we omit the outer
- * brackets to allow multiplication by fractional pixels.
- */
-#define VNBYTES(bpix) (1 << (bpix)) / 8
-#define VNBITS(bpix) (1 << (bpix))
-
-#define POS_TO_FB(posX, posY)                                                  \
-  ((UINT8                                                                      \
-        *)((UINTN)This->Mode->FrameBufferBase + (posY)*This->Mode->Info->PixelsPerScanLine * FB_BYTES_PER_PIXEL + (posX)*FB_BYTES_PER_PIXEL))
-
-#define FB_BITS_PER_PIXEL (32)
-#define FB_BYTES_PER_PIXEL (FB_BITS_PER_PIXEL / 8)
-
-#define DISPLAYDXE_RED_MASK 0xFF0000
-#define DISPLAYDXE_GREEN_MASK 0x00FF00
-#define DISPLAYDXE_BLUE_MASK 0x0000FF
-#define DISPLAYDXE_ALPHA_MASK 0x000000
-
-/*
- * Bits per pixel selector. Each value n is such that the bits-per-pixel is
- * 2 ^ n
- */
-enum video_log2_bpp {
-  VIDEO_BPP1 = 0,
-  VIDEO_BPP2,
-  VIDEO_BPP4,
-  VIDEO_BPP8,
-  VIDEO_BPP16,
-  VIDEO_BPP32,
-};
+#define FB_BYTES_PER_PIXEL  4
 
 typedef struct {
   VENDOR_DEVICE_PATH DisplayDevicePath;
@@ -167,10 +136,22 @@ STATIC
 EFI_STATUS
 SetSimpleFrameBufferMemoryAttributes(
     IN EFI_PHYSICAL_ADDRESS FrameBufferBase,
-    IN UINTN FrameBufferSize)
+    IN UINT64 FrameBufferSize)
 {
   EFI_CPU_ARCH_PROTOCOL *CpuArch = NULL;
   EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  AlignedBase;
+  UINT64                AlignedSize;
+
+  Status = UemuFdtAlignRange (
+             FrameBufferBase,
+             FrameBufferSize,
+             &AlignedBase,
+             &AlignedSize
+             );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   Status = gBS->LocateProtocol(&gEfiCpuArchProtocolGuid, NULL, (VOID **)&CpuArch);
   if (EFI_ERROR(Status) || CpuArch == NULL) {
@@ -180,8 +161,8 @@ SetSimpleFrameBufferMemoryAttributes(
 
   Status = CpuArch->SetMemoryAttributes(
       CpuArch,
-      FrameBufferBase,
-      FrameBufferSize,
+      AlignedBase,
+      AlignedSize,
       EFI_MEMORY_WT | EFI_MEMORY_XP);
 
   if (EFI_ERROR(Status)) {
@@ -194,6 +175,72 @@ SetSimpleFrameBufferMemoryAttributes(
   return Status;
 }
 
+STATIC
+EFI_STATUS
+GetSimpleFrameBuffer (
+  OUT EFI_PHYSICAL_ADDRESS  *Base,
+  OUT UINT64                *Size,
+  OUT UINT32                *Width,
+  OUT UINT32                *Height,
+  OUT UINT32                *Stride
+  )
+{
+  EFI_STATUS   Status;
+  CONST VOID   *Fdt;
+  INT32        Node;
+  CONST CHAR8  *Format;
+  UINT64       RequiredSize;
+
+  Status = UemuFdtGet (&Fdt);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = UemuFdtFindCompatibleNode (Fdt, "simple-framebuffer", &Node);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = UemuFdtGetReg (Fdt, Node, 0, Base, Size);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = UemuFdtGetU32 (Fdt, Node, "width", Width);
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetU32 (Fdt, Node, "height", Height);
+  }
+
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetU32 (Fdt, Node, "stride", Stride);
+  }
+
+  if (!EFI_ERROR (Status)) {
+    Status = UemuFdtGetString (Fdt, Node, "format", &Format, NULL);
+  }
+
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  if ((*Width == 0) || (*Height == 0) ||
+      ((*Stride % FB_BYTES_PER_PIXEL) != 0) ||
+      (*Width > MAX_UINT32 / FB_BYTES_PER_PIXEL) ||
+      (*Stride < *Width * FB_BYTES_PER_PIXEL) ||
+      (*Height > MAX_UINT64 / *Stride) ||
+      (AsciiStrCmp (Format, "x8r8g8b8") != 0))
+  {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  RequiredSize = MultU64x32 (*Stride, *Height);
+  if ((RequiredSize > *Size) || (RequiredSize > MAX_UINTN) || (*Base > MAX_UINTN)) {
+    return EFI_BAD_BUFFER_SIZE;
+  }
+
+  return EFI_SUCCESS;
+}
+
 EFI_STATUS
 EFIAPI
 SimpleFbDxeInitialize(
@@ -203,21 +250,26 @@ SimpleFbDxeInitialize(
   EFI_STATUS Status             = EFI_SUCCESS;
   EFI_HANDLE hUEFIDisplayHandle = NULL;
 
-  /* Retrieve frame buffer from pre-SEC bootloader */
-  DEBUG(
-      (EFI_D_INFO,
-       "SimpleFbDxe: Retrieve FrameBuffer parameters from PCD\n"));
+  EFI_PHYSICAL_ADDRESS FrameBufferAddress;
+  UINT64               FrameBufferRangeSize;
+  UINT64               FrameBufferSize;
+  UINT32               FrameBufferWidth;
+  UINT32               FrameBufferHeight;
+  UINT32               FrameBufferStride;
 
-  UINT64 MipiFrameBufferAddr = PcdGet64(PcdFrameBufferBaseAddress);
-  UINT32 MipiFrameBufferWidth  = PcdGet32(PcdFrameBufferWidth);
-  UINT32 MipiFrameBufferHeight = PcdGet32(PcdFrameBufferHeight);
-
-  /* Sanity check */
-  if (MipiFrameBufferAddr == 0 || MipiFrameBufferWidth == 0 ||
-      MipiFrameBufferHeight == 0) {
-    DEBUG((EFI_D_ERROR, "SimpleFbDxe: Invalid FrameBuffer parameters\n"));
-    return EFI_DEVICE_ERROR;
+  Status = GetSimpleFrameBuffer (
+             &FrameBufferAddress,
+             &FrameBufferRangeSize,
+             &FrameBufferWidth,
+             &FrameBufferHeight,
+             &FrameBufferStride
+             );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "%a: simple-framebuffer unavailable: %r\n", __func__, Status));
+    return Status;
   }
+
+  FrameBufferSize = MultU64x32 (FrameBufferStride, FrameBufferHeight);
 
   /* Prepare struct */
   if (mDisplay.Mode == NULL) {
@@ -249,15 +301,10 @@ SimpleFbDxeInitialize(
   mDisplay.Mode->Mode          = 0;
   mDisplay.Mode->Info->Version = 0;
 
-  mDisplay.Mode->Info->HorizontalResolution = MipiFrameBufferWidth;
-  mDisplay.Mode->Info->VerticalResolution   = MipiFrameBufferHeight;
+  mDisplay.Mode->Info->HorizontalResolution = FrameBufferWidth;
+  mDisplay.Mode->Info->VerticalResolution   = FrameBufferHeight;
 
-  /* uemu-ng SimpleFB runs on XRGB 8:8:8:8 */
-  UINT32               LineLength = MipiFrameBufferWidth * VNBYTES(VIDEO_BPP32);
-  UINT32               FrameBufferSize    = LineLength * MipiFrameBufferHeight;
-  EFI_PHYSICAL_ADDRESS FrameBufferAddress = MipiFrameBufferAddr;
-
-  mDisplay.Mode->Info->PixelsPerScanLine = MipiFrameBufferWidth;
+  mDisplay.Mode->Info->PixelsPerScanLine = FrameBufferStride / FB_BYTES_PER_PIXEL;
   mDisplay.Mode->Info->PixelFormat = PixelBlueGreenRedReserved8BitPerColor;
   mDisplay.Mode->SizeOfInfo      = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
   mDisplay.Mode->FrameBufferBase = FrameBufferAddress;
@@ -266,7 +313,7 @@ SimpleFbDxeInitialize(
   /* Memory property configuration */
   SetSimpleFrameBufferMemoryAttributes(
       (EFI_PHYSICAL_ADDRESS)FrameBufferAddress,
-      FrameBufferSize);
+      FrameBufferRangeSize);
 
   /* Create the FrameBufferBltLib configuration. */
   Status = FrameBufferBltConfigure(
@@ -283,8 +330,9 @@ SimpleFbDxeInitialize(
   }
   ASSERT_EFI_ERROR(Status);
 
-  DEBUG((EFI_D_INFO, "SimpleFbDxe: FB at 0x%08llX, %dx%d\n",
-         FrameBufferAddress, MipiFrameBufferWidth, MipiFrameBufferHeight));
+  DEBUG((EFI_D_INFO, "SimpleFbDxe: FB at 0x%08llX, %dx%d, stride %u\n",
+         FrameBufferAddress, FrameBufferWidth, FrameBufferHeight,
+         FrameBufferStride));
   ZeroMem((VOID *)(UINTN)FrameBufferAddress, FrameBufferSize);
 
   /* Register handle */
