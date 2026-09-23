@@ -558,7 +558,7 @@ GetTimeBaseFrequency (
   return SwapBytes32 (*(CONST UINT32 *)Prop->Data);
 }
 
-#define BENCH_SORT_SIZE  256
+#define BENCH_SORT_SIZE  4096
 
 //
 // In-place recursive quicksort with Hoare partition and
