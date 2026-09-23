@@ -288,6 +288,17 @@
   OvmfPkg/VirtioNetDxe/VirtioNet.inf
   UemuPkg/Drivers/Bcm2835RngDxe/Bcm2835RngDxe.inf
 
+  # PCI host bridge and bus enumeration
+  UefiCpuPkg/CpuMmio2Dxe/CpuMmio2Dxe.inf {
+    <LibraryClasses>
+      NULL|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
+  }
+  MdeModulePkg/Bus/Pci/PciHostBridgeDxe/PciHostBridgeDxe.inf
+  MdeModulePkg/Bus/Pci/PciBusDxe/PciBusDxe.inf {
+    <LibraryClasses>
+      NULL|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
+  }
+
   #
   # FAT filesystem + GPT/MBR partitioning + UDF filesystem + virtio-fs
   #
@@ -331,5 +342,5 @@
   #
   # Video support
   #
-  OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
+  OvmfPkg/QemuVideoDxe/QemuVideoDxe.inf
   UemuPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf

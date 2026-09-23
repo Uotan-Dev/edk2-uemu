@@ -85,9 +85,14 @@
   FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
   UemuFdtLib|UemuPkg/Library/UemuFdtLib/UemuFdtLib.inf
 
-  # PCI Libraries (needed by SerialPortLib even though platform has no PCI)
+  # PCI support
   PciLib|MdePkg/Library/BasePciLibPciExpress/BasePciLibPciExpress.inf
   PciExpressLib|MdePkg/Library/BasePciExpressLib/BasePciExpressLib.inf
+  PciSegmentLib|MdePkg/Library/BasePciSegmentLibPci/BasePciSegmentLibPci.inf
+  PciPcdProducerLib|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
+  PciHostBridgeLib|OvmfPkg/Fdt/FdtPciHostBridgeLib/FdtPciHostBridgeLib.inf
+  PciHostBridgeUtilityLib|OvmfPkg/Library/PciHostBridgeUtilityLib/PciHostBridgeUtilityLib.inf
+  DxeHardwareInfoLib|OvmfPkg/Library/HardwareInfoLib/DxeHardwareInfoLib.inf
 
   #
   # CryptoPkg libraries needed by multiple firmware features
